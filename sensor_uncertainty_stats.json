@@ -1,0 +1,17 @@
+{
+    "samples_total": 74146,
+    "abs_error_mean": 15.946248767262416,
+    "abs_error_std": 132.42968433336148,
+    "abs_error_rms": 133.38629668141022,
+    "abs_error_fit_mu": 3.154238096517177,
+    "abs_error_fit_sigma": 3.9799954691401016,
+    "epv_mean": 0.4617596278780178,
+    "epv_std": 1.6686892075591953,
+    "epv_fit_mu": 0.3716414415739184,
+    "epv_fit_sigma": 0.5345258989724785,
+    "logs_used": 142,
+    "data_source": "74146 aligned samples from RTK-qualified flights",
+    "epv_samples": 72445,
+    "eph_mean": 0.30332756688843265,
+    "eph_std": 1.1183680921102976
+}
