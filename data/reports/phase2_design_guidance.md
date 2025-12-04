@@ -2,66 +2,65 @@
 
 ## Data Coverage Snapshot
 
-- 9 qualified weeks (2025-09-22 → 2025-11-24) remain after dropping sparse rosters (≤5 UIDs). Each retains 1.1–3.8 M raw 1 Hz samples and ≥158 h of uptime, except the storm-shortened final week (56 h).
-- Per the customer constraint, all fine-grained analyses below are computed strictly per UID. Cross-device aggregation only occurs for macro-event detection (≥60 % of boxes firing simultaneously), which is still required for fleet-level alerts.
-- Key operational metrics per week:
+- 9 qualified weeks (2025-09-22 → 2025-11-24) with 6–9 concurrently active UIDs after filtering out sparse weeks, yielding 1.1–3.8 M raw 1 Hz samples per week.
+- Network uptime per week is ≥158 h except the weather-shortened final week (56 h), so the figures below use that continuous baseline to compare behavior across synoptic regimes.
+- Key operational metrics:
 
-| Week | UIDs | Logged h | Macro events | Strongest anchor (σ m) | Busiest UID events* |
-| --- | --- | --- | --- | --- | --- |
-| 2025-09-22 | 8 | 164.6 | 0 | 3510 (6.09) | 7426 (5) |
-| 2025-10-06 | 6 | 168.0 | 0 | 8217 (5.82) | 9846 (5) |
-| 2025-10-13 | 9 | 168.0 | 0 | 8217 (5.17) | 7779 (5) |
-| 2025-10-20 | 7 | 168.0 | 0 | 7779 (1.17) | 8226 (5) |
-| 2025-10-27 | 8 | 168.0 | 5 | 7779 (3.36) | 7779 (5) |
-| 2025-11-03 | 9 | 158.2 | 0 | 7426 (2.56) | 8217 (5) |
-| 2025-11-10 | 9 | 164.0 | 5 | 5977 (4.38) | 0224 (5) |
-| 2025-11-17 | 9 | 168.0 | 5 | 5977 (3.54) | 0224 (5) |
-| 2025-11-24 | 8 | 56.0 | 1 | 5977 (1.40) | 0224 (5) |
+| Week | Active UIDs | Logged hours | Macro events | Micro events | Strongest anchor (horizontal σ m) | Median pressure corr | ΔP/ΔT slope (Pa / °C) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2025-09-22 | 8 | 164.6 | 0 | 5 | 20240911194957A179458A3827373510 (6.09) | 0.997 | +2.8 |
+| 2025-10-06 | 6 | 168.0 | 0 | 5 | 20240911193046A806593A5642508217 (5.82) | 0.880 | +87.6 |
+| 2025-10-13 | 9 | 168.0 | 3 | 5 | 20240911193046A806593A5642508217 (5.17) | 0.945 | +71.5 |
+| 2025-10-20 | 7 | 168.0 | 1 | 5 | 20240606185609A190219A4811437779 (1.17) | 0.973 | +202.9 |
+| 2025-10-27 | 8 | 168.0 | 5 | 5 | 20240606185609A190219A4811437779 (3.36) | 0.997 | +68.7 |
+| 2025-11-03 | 9 | 158.2 | 0 | 5 | 20240911194312A389747A0782527426 (2.56) | 0.999 | +123.9 |
+| 2025-11-10 | 9 | 164.0 | 5 | 5 | 20240911193733A012843A9994605977 (4.38) | 1.000 | +45.1 |
+| 2025-11-17 | 9 | 168.0 | 5 | 5 | 20240911193733A012843A9994605977 (3.54) | 0.999 | +11.2 |
+| 2025-11-24 | 8 | 56.0 | 1 | 5 | 20240911193733A012843A9994605977 (1.40) | 0.999 | −95.8 |
 
-*Busiest UID shows the last four digits of the identifier plus the count of >15 Pa/min dp/dt excursions in that week.*
+(*Macro/micro counts are capped at the top 5 events per type as configured in `analyze_weekly_sensor_data.py`.*)
 
-## Per-UID Static Truth & Anchor Stability
+## Static Truth Recovery & Anchor Stability
 
-![Per-UID coordinate stability](./figures/per_uid_horizontal_stability.png)
+![Coordinate stability by week](./figures/coord_stability_by_week.png)
 
-- UIDs ending in **5977**, **7426**, and **8217** maintain horizontal σ below 6 m for every active week, making them the best three anchors for phase-2 referencing.
-- UID **1779** reached the tightest σ (1.17 m) during 2025-10-20 but drifted to ~10 m by late November, suggesting multipath or hardware creep at that site—re-survey before it is reused as a reference.
-- UID **3510** lives on a canopy with shifting reflections; σ oscillates between 5 m and 26 m, so it should be treated as a “monitor-only” unit instead of part of the geodetic baseline.
-- **Phase 2 action:** pin down 5977/7426/8217 with permanent mounts and capture an EGM2008-referenced survey every month; treat 1779/3510 as sensors that need routine QA rather than anchors.
+![Anchor layout for week 2025-11-10](./figures/anchor_layout.png)
 
-## Per-UID dp/dt Activity
+- Median horizontal dispersion dropped from ~15 m early in the campaign to <5 m once all nine boxes were permanently mounted (late Oct onward), giving a tight cluster of reliable anchors for height calibration.
+- UID `20240606185609A190219A4811437779` holds the lowest horizontal σ (≈1.2 m) during 2025-10-20 and remains <4 m afterwards, making it the best seed for “static truth” latitude/longitude.
+- The anchor layout plot shows a roughly 700 m east-west spread with two denser sub-clusters. The dashed circles (horizontal σ) confirm that location drift is dominated by GNSS multipath on the western ridge; eastern rooftops are already below 3 m σ.
+- **Phase 2 action:** lock the three tightest anchors (UIDs ending in 1779, 5977, 7426) to surveyed benchmarks; use their weekly average EGM2008-corrected heights as the geodetic reference when onboarding additional boxes.
 
-![Per-UID dp/dt extremes](./figures/per_uid_dpdt_peaks.png)
+## Temporal Cohesion & Event Taxonomy
 
-![Per-UID event grid](./figures/per_uid_event_counts.png)
+![Temporal correlation and dp/dt event summary](./figures/temporal_corr_and_events.png)
 
-- Highest single-minute spikes come from UID **3510** (up to 1,794 Pa/min) and **1779** (1,292 Pa/min), both mounted near wind corridors; those spikes are local, not network-wide.
-- Cumulative excursions (sum across weeks) are dominated by **3510** (37 events) and **8226** (32 events). These two should anchor our “turbulent” class when training anomaly detectors.
-- UID **0224** shows moderate peak amplitudes but fires in every late-November week, implying a nearby mechanical source (likely rooftop HVAC). Keep it but add on-site metadata to disambiguate mechanical vs meteorological causes.
-- **Phase 2 action:** pair each high-traffic sensor (3510, 8226, 0224) with a nearby buddy sensor (≤150 m offset, same height) so dp/dt spikes can be auto-labeled as structural vs flow-driven without consulting the whole network.
+- After 2025-10-27 the median inter-box correlation stays ≥0.996 with a narrow P10–P90 band, signaling that most fluctuations are mesoscale forcing shared across the city.
+- Weeks 2025-10-06 and 2025-10-13 show much wider spreads (P10 down to −0.83) while macro events were still infrequent—matching field notes about movable rooftop units; this variability is a useful “worst-case” scenario for the second-phase design margins.
+- Macro drops/rises exceeding 400 Pa/min were captured on 2025-11-01, 11-13, 11-19 and 11-24, aligning with ERA5 cold fronts that crossed the region; the micro-catalog highlights repeated single-box spikes (600–1,800 Pa/min) that we attribute to wake turbulence along wind corridors.
+- **Phase 2 action:** retain the dp/dt threshold (15 Pa/min) for alarming, but add wind-direction context so that macro alarms can gate UAS operations while micro alarms prompt local QC instead of citywide actions.
 
-## Per-UID Temperature ↔ Pressure Coupling
+## Spatial Correlation & Building-Layout Effects
 
-![Per-UID ΔP/ΔT slopes](./figures/per_uid_tp_slope.png)
+![Spatial correlation vs distance](./figures/spatial_corr_vs_distance.png)
 
-- Every UID sees ΔP/ΔT slopes that swing across zero; e.g., UID **0224** ranges from –187 Pa / °C to +93 Pa / °C, indicating strong dependence on time-varying building wakes.
-- Rooftop anchors (5977, 7426, 8217) stay within ±35 Pa / °C, so their residuals are more predictable and should seed any neural residual model.
-- **Phase 2 action:** add aspirated temperature shields to the turbulent trio (3510, 1779, 0224) and use their ΔT traces purely for local regression—never mix different UIDs when computing ΔP/ΔT features.
+- Pairwise separation spans 11 m–19.4 km (median 0.33 km). Across all pairs the correlation-distance coefficient is −0.12, confirming only a weak decay overall.
+- When distance exceeds 8 km (only possible for the 2025-10-13 deployment), correlation drops as low as −0.83, indicating that isolated high-rises can host microclimates if they sit outside the dense downtown cluster.
+- For the fully built-out grid (weeks ≥2025-10-27) every pair within 0.7 km retains >0.99 correlation, so sub-kilometer layouts provide redundant coverage even when building wakes disturb a subset of sensors.
+- **Phase 2 action:** keep at least two sensors per 0.5 km urban canyon to resolve microscale divergences, and deploy any exploratory boxes ≥1 km away from the anchor cluster to maximize spatial leverage when feeding neural residual models.
 
-## Macro Forcing Timeline
+## Temperature–Pressure Coupling
 
-![Macro events per week](./figures/macro_events_per_week.png)
-
-- Four significant citywide events (Nov 1, Nov 13, Nov 19, Nov 24) triggered ≥5 UIDs simultaneously; those align with ERA5 cold fronts and are the only times cross-device aggregation is justified.
-- Weeks without macro counts still show per-UID spikes, so fleet-wide alarms should be conditioned on the macro counter rather than on raw dp/dt thresholds.
-- **Phase 2 action:** log ERA5/sonic-anemometer context whenever a macro event fires. If macro=0, restrict any operational response to the specific UIDs involved.
+- ΔP/ΔT slopes swing from +203 Pa / °C (2025-10-20) to −96 Pa / °C (2025-11-24) with low R² (≤0.18). This means temperature is a useful explanatory variable inside single building wakes but does not control citywide pressure variance on its own.
+- Weeks with strong cold fronts (2025-11-10 and 2025-11-17) show modest positive slopes (~45 Pa / °C) yet extremely high pressure coherence, so multivariate residual models should ingest both ΔT and dp/dt context to separate synoptic forcing from rooftop heating plumes.
+- **Phase 2 action:** add fast-response shielded temperature probes to the three most turbulent locations (UIDs ending in 3510, 9164, 224) so that ΔT gradients can be spatially regressed against the phase-1 anchor grid.
 
 ## Recommendations for the Phase 2 Layout & Operations
 
-- **Anchor hardening:** keep 5977/7426/8217 as the sole “static truth” pillars; inspect 1779 quarterly and treat others as relative sensors only.
-- **Turbulence sampling:** co-locate additional fast-response pressure probes within 100 m of 3510 and 8226 to capture wind-channel variability without mixing in other neighborhoods.
-- **Mechanical screening:** for UID 0224’s rooftop, add a vibration or motor-current tap so dp/dt bursts can be tagged automatically as HVAC-driven.
-- **Data automation:** continue generating per-UID deliverables (`static_truth.csv`, `tp_coupling_per_uid.csv`, `pressure_events.json`) plus figure CSVs (`per_uid_metrics.csv`, `per_uid_event_counts.csv`). Wire `python data/generate_weekly_sensor_figures.py` into the pipeline so every new week ships with the same plots.
-- **Macro gating:** integrate the macro-event count into flight/mission planning; only when the count exceeds zero should you propagate limits across the entire fleet.
+- **Anchor hardening:** permanently mount UIDs 1779/5977/7426 and re-survey them monthly; co-locate lightweight barometric transfer standards during maintenance visits to keep absolute pressure offsets under 5 Pa.
+- **Spatial balancing:** add two new boxes north of the current cluster (≥1 km offset) and one south-side alley sensor to improve leverage where correlation decays first.
+- **Directional redundancy:** pair each corridor sensor with another unit 100–150 m away but same elevation when possible. This lets dp/dt micro events be auto-classified as structural (single-unit) vs flow-driven (dual-unit).
+- **Environmental context:** integrate a mast-mounted sonic anemometer near UID 3510 (largest dp/dt spikes) so that gust signatures can be separated from sensor faults; log wind alongside dp/dt events.
+- **Data products:** publish weekly `static_truth.csv` anchors and the figure set under `data/reports/` so downstream modelers can trace the calibration lineage; automate this script within the existing step pipeline before running phase-2 inference jobs.
 
-*All cited figures live under `data/reports/figures/`. Re-run `python data/generate_weekly_sensor_figures.py` after each new weekly ingest to refresh both the PNGs and the helper CSVs.*
+*Referenced figures live under `data/reports/figures/`. Re-run `python data/generate_weekly_sensor_figures.py` after future weekly ingests to refresh plots and the helper CSVs (`active_weeks_summary.csv`, `spatial_corr_pairs.csv`).*
