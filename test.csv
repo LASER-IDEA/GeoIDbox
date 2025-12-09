@@ -1,0 +1,26 @@
+Metric,Height System,Score
+Conceptual simplicity,HAE,3
+Reference stability,HAE,4
+Measurement practicality,HAE,4
+Measurement accuracy,HAE,4
+Practical applications,HAE,4
+Conceptual simplicity,MSL,4
+Reference stability,MSL,2
+Measurement practicality,MSL,2
+Measurement accuracy,MSL,3
+Practical applications,MSL,4
+Conceptual simplicity,Orthgonal Height,2
+Reference stability,Orthgonal Height,3
+Measurement practicality,Orthgonal Height,3
+Measurement accuracy,Orthgonal Height,4
+Practical applications,Orthgonal Height,3
+Conceptual simplicity,AGL,4
+Reference stability,AGL,2
+Measurement practicality,AGL,1
+Measurement accuracy,AGL,2
+Practical applications,AGL,3
+Conceptual simplicity,Q-codes,1
+Reference stability,Q-codes,1
+Measurement practicality,Q-codes,4
+Measurement accuracy,Q-codes,1
+Practical applications,Q-codes,2
