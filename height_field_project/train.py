@@ -19,6 +19,7 @@ except ImportError:  # 轻量依赖，可选
 from height_field_project.config import TrainingConfig, save_config
 from height_field_project.physics_baseline import fit_barometric_baseline
 from height_field_project.neural_field import ResidualNeuralField
+from height_field_project.era5_utils import enrich_with_era5
 
 
 def set_seed(seed: int) -> None:
@@ -29,19 +30,29 @@ def set_seed(seed: int) -> None:
 
 
 class ResidualDataset(Dataset):
-    def __init__(self, X: np.ndarray, y: np.ndarray, w: np.ndarray | None = None):
+    def __init__(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        w: np.ndarray | None = None,
+        h_phys_raw: np.ndarray | None = None,
+        p_raw: np.ndarray | None = None,
+    ):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = torch.tensor(y, dtype=torch.float32)
         if w is None:
             self.w = torch.ones_like(self.y)
         else:
             self.w = torch.tensor(w, dtype=torch.float32)
+        # raw values for physics residual
+        self.h_phys_raw = torch.tensor(h_phys_raw if h_phys_raw is not None else np.zeros_like(y), dtype=torch.float32)
+        self.p_raw = torch.tensor(p_raw if p_raw is not None else np.zeros_like(y), dtype=torch.float32)
 
     def __len__(self) -> int:
         return len(self.y)
 
     def __getitem__(self, idx: int):
-        return self.X[idx], self.y[idx], self.w[idx]
+        return self.X[idx], self.y[idx], self.w[idx], self.h_phys_raw[idx], self.p_raw[idx]
 
 
 def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
@@ -57,6 +68,11 @@ def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         "avg_pressure",
         "week_seq",
     ]
+    # 可选 ERA5 大尺度特征
+    optional_cols = ["era5_tv1000_k", "era5_tv900_k", "era5_lapse_1000_900"]
+    for col in optional_cols:
+        if col in df.columns and df[col].notna().any():
+            feature_cols.append(col)
     for col in feature_cols:
         if col not in df.columns:
             raise ValueError(f"缺少特征列 {col}")
@@ -72,19 +88,24 @@ def build_pseudo_points(df: pd.DataFrame, count: int) -> pd.DataFrame:
     p_med = df["avg_pressure"].median()
     week_mode = df["week_seq"].mode().iloc[0] if not df["week_seq"].empty else 0
 
-    pseudo = pd.DataFrame(
-        {
-            "avg_latitude": np.random.uniform(lat_min, lat_max, size=count),
-            "avg_longitude": np.random.uniform(lon_min, lon_max, size=count),
-            "h_phys_m": np.full(count, h_med),
-            "avg_temperature": np.full(count, temp_med),
-            "avg_humidity": np.full(count, hum_med),
-            "avg_pressure": np.full(count, p_med),
-            "week_seq": np.full(count, week_mode),
-            "residual": np.zeros(count),
-            "is_pseudo": np.ones(count, dtype=int),
-        }
-    )
+    data = {
+        "avg_latitude": np.random.uniform(lat_min, lat_max, size=count),
+        "avg_longitude": np.random.uniform(lon_min, lon_max, size=count),
+        "h_phys_m": np.full(count, h_med),
+        "avg_temperature": np.full(count, temp_med),
+        "avg_humidity": np.full(count, hum_med),
+        "avg_pressure": np.full(count, p_med),
+        "week_seq": np.full(count, week_mode),
+        "residual": np.zeros(count),
+        "is_pseudo": np.ones(count, dtype=int),
+    }
+
+    # If ERA5 features exist in df, fill with medians
+    for col in ["era5_tv1000_k", "era5_tv900_k", "era5_lapse_1000_900"]:
+        if col in df.columns:
+            data[col] = np.full(count, df[col].median())
+
+    pseudo = pd.DataFrame(data)
     return pseudo
 
 
@@ -105,6 +126,7 @@ def main(args: argparse.Namespace) -> None:
         pseudo_weight=args.pseudo_weight,
         huber_delta=args.huber_delta,
         seed=args.seed,
+        lambda_phys=args.lambda_phys,
     )
 
     set_seed(cfg.seed)
@@ -137,10 +159,29 @@ def main(args: argparse.Namespace) -> None:
         print("wandb 未安装，跳过线上日志；可 `pip install wandb` 启用。")
 
     df = pd.read_csv(cfg.input_csv)
+    if args.era5_nc is not None:
+        if os.path.exists(args.era5_nc):
+            print(f"Enriching with ERA5: {args.era5_nc}")
+            df = enrich_with_era5(df, args.era5_nc)
+        else:
+            print(f"WARN: ERA5 file not found: {args.era5_nc}, skip enrichment.")
     df, baseline_params = fit_barometric_baseline(df)
     df["residual"] = df["avg_altitude"] - df["h_phys_m"]
     features_df, feature_cols = prepare_features(df)
+
+    # Drop rows with NaNs in features to avoid scaler issues
+    mask_valid = features_df.notna().all(axis=1)
+    if not mask_valid.all():
+        dropped = (~mask_valid).sum()
+        print(f"Dropping {dropped} rows with NaNs in features")
+    features_df = features_df[mask_valid]
+    df = df.loc[features_df.index]
+    if len(features_df) == 0:
+        raise ValueError("No valid rows remain after dropping NaNs. Check ERA5 coverage or run without --era5_nc.")
+
     target = df["residual"].values
+    h_phys_raw_all = df["h_phys_m"].values
+    p_raw_all = df["avg_pressure"].values
 
     x_scaler = StandardScaler()
     y_scaler = StandardScaler()
@@ -148,12 +189,17 @@ def main(args: argparse.Namespace) -> None:
     y_scaled = y_scaler.fit_transform(target.reshape(-1, 1)).flatten()
 
     # 拆分真实数据
-    X_train, X_tmp, y_train, y_tmp = train_test_split(
-        X_scaled, y_scaled, test_size=cfg.val_ratio + cfg.test_ratio, random_state=cfg.seed
+    X_train, X_tmp, y_train, y_tmp, hp_train, hp_tmp, p_train, p_tmp = train_test_split(
+        X_scaled,
+        y_scaled,
+        h_phys_raw_all,
+        p_raw_all,
+        test_size=cfg.val_ratio + cfg.test_ratio,
+        random_state=cfg.seed,
     )
     val_size = cfg.test_ratio / (cfg.val_ratio + cfg.test_ratio)
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_tmp, y_tmp, test_size=val_size, random_state=cfg.seed
+    X_val, X_test, y_val, y_test, hp_val, hp_test, p_val, p_test = train_test_split(
+        X_tmp, y_tmp, hp_tmp, p_tmp, test_size=val_size, random_state=cfg.seed
     )
 
     # 伪点仅用于训练集
@@ -164,15 +210,21 @@ def main(args: argparse.Namespace) -> None:
         X_pseudo = x_scaler.transform(pseudo_features.values)
         y_pseudo = y_scaler.transform(pseudo_df["residual"].values.reshape(-1, 1)).flatten()
         w_pseudo = np.full(len(y_pseudo), cfg.pseudo_weight, dtype=np.float32)
+        hp_pseudo = pseudo_df["h_phys_m"].values
+        p_pseudo = pseudo_df["avg_pressure"].values
         X_train = np.concatenate([X_train_real, X_pseudo], axis=0)
         y_train = np.concatenate([y_train_real, y_pseudo], axis=0)
         w_train = np.concatenate([np.ones(len(X_train_real), dtype=np.float32), w_pseudo], axis=0)
+        hp_train = np.concatenate([hp_train, hp_pseudo], axis=0)
+        p_train = np.concatenate([p_train, p_pseudo], axis=0)
     else:
         w_train = np.ones(len(X_train), dtype=np.float32)
+        hp_train = hp_train
+        p_train = p_train
 
-    train_ds = ResidualDataset(X_train, y_train, w_train)
-    val_ds = ResidualDataset(X_val, y_val, np.ones(len(X_val), dtype=np.float32))
-    test_ds = ResidualDataset(X_test, y_test, np.ones(len(X_test), dtype=np.float32))
+    train_ds = ResidualDataset(X_train, y_train, w_train, hp_train, p_train)
+    val_ds = ResidualDataset(X_val, y_val, np.ones(len(X_val), dtype=np.float32), hp_val, p_val)
+    test_ds = ResidualDataset(X_test, y_test, np.ones(len(X_test), dtype=np.float32), hp_test, p_test)
 
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False)
@@ -188,6 +240,10 @@ def main(args: argparse.Namespace) -> None:
 
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     criterion = nn.HuberLoss(delta=cfg.huber_delta)
+    y_scale = float(y_scaler.scale_[0])
+    y_mean = float(y_scaler.mean_[0])
+    Hs = baseline_params["Hs_m"]
+    P0 = baseline_params["P0_Pa"]
 
     def run_epoch(loader, train: bool):
         if train:
@@ -197,13 +253,25 @@ def main(args: argparse.Namespace) -> None:
         total = 0.0
         count = 0
         with torch.set_grad_enabled(train):
-            for xb, yb, wb in loader:
+            for xb, yb, wb, hp_raw, p_raw in loader:
                 xb = xb.to(device)
                 yb = yb.to(device)
                 wb = wb.to(device)
+                hp_raw = hp_raw.to(device)
+                p_raw = p_raw.to(device)
                 pred = model(xb)
                 loss = criterion(pred, yb)
                 loss = (loss * wb).mean()
+
+                # Physics residual: ln(p_obs) vs ln(p_hat) from predicted height
+                # y_real = pred * scale + mean
+                pred_real = pred * y_scale + y_mean
+                h_pred = hp_raw + pred_real
+                ln_p_hat = np.log(P0) - h_pred / Hs
+                ln_p_obs = torch.log(p_raw)
+                phys_res = ln_p_obs - ln_p_hat
+                phys_loss = (phys_res ** 2).mean()
+                loss = loss + cfg.lambda_phys * phys_loss
 
                 if train:
                     opt.zero_grad()
@@ -240,7 +308,7 @@ def main(args: argparse.Namespace) -> None:
     preds = []
     gts = []
     with torch.no_grad():
-        for xb, yb, _ in test_loader:
+        for xb, yb, _, _, _ in test_loader:
             xb = xb.to(device)
             pred = model(xb).cpu().numpy()
             preds.append(pred)
@@ -277,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train residual neural field for height conversion")
     p.add_argument("--input_csv", type=str, default="sensor_data_clean_stable.csv")
     p.add_argument("--artifacts_dir", type=str, default=os.path.join("height_field_project", "artifacts"))
+    p.add_argument("--era5_nc", type=str, default=None, help="optional ERA5 pressure-level NetCDF for macro met features")
     p.add_argument("--epochs", type=int, default=300)
     p.add_argument("--batch_size", type=int, default=256)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -292,6 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--wandb_project", type=str, default='GeoBox', help="wandb project name; leave None to disable logging")
     p.add_argument("--wandb_run_name", type=str, default=None, help="optional wandb run name")
+    p.add_argument("--lambda_phys", type=float, default=0.1, help="weight for physics residual loss")
     return p
 
 

@@ -20,6 +20,7 @@ class TrainingConfig:
     pseudo_weight: float = 0.5  # 伪点损失权重
     huber_delta: float = 1.0
     seed: int = 42
+    lambda_phys: float = 0.1  # 物理残差损失权重
 
 
 def save_config(cfg: TrainingConfig, path: str) -> None:
