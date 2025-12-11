@@ -11,6 +11,10 @@ import torch.nn as nn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset
+try:
+    import wandb
+except ImportError:  # 轻量依赖，可选
+    wandb = None
 
 from height_field_project.config import TrainingConfig, save_config
 from height_field_project.physics_baseline import fit_barometric_baseline
@@ -107,6 +111,31 @@ def main(args: argparse.Namespace) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(cfg.artifacts_dir, exist_ok=True)
 
+    run = None
+    if args.wandb_project and wandb is not None:
+        run = wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+            config={
+                "input_csv": cfg.input_csv,
+                "epochs": cfg.epochs,
+                "batch_size": cfg.batch_size,
+                "lr": cfg.lr,
+                "val_ratio": cfg.val_ratio,
+                "test_ratio": cfg.test_ratio,
+                "hidden_dim": cfg.hidden_dim,
+                "depth": cfg.depth,
+                "fourier_L": cfg.fourier_L,
+                "dropout": cfg.dropout,
+                "pseudo_ratio": cfg.pseudo_ratio,
+                "pseudo_weight": cfg.pseudo_weight,
+                "huber_delta": cfg.huber_delta,
+                "seed": cfg.seed,
+            },
+        )
+    elif args.wandb_project and wandb is None:
+        print("wandb 未安装，跳过线上日志；可 `pip install wandb` 启用。")
+
     df = pd.read_csv(cfg.input_csv)
     df, baseline_params = fit_barometric_baseline(df)
     df["residual"] = df["avg_altitude"] - df["h_phys_m"]
@@ -199,6 +228,8 @@ def main(args: argparse.Namespace) -> None:
             no_improve += 1
         if (epoch + 1) % 10 == 0:
             print(f"[{epoch+1:04d}] train {train_loss:.4f} | val {val_loss:.4f}")
+        if run:
+            wandb.log({"epoch": epoch + 1, "train_loss": train_loss, "val_loss": val_loss})
         if no_improve >= patience:
             print(f"Early stopping at epoch {epoch+1}")
             break
@@ -209,7 +240,7 @@ def main(args: argparse.Namespace) -> None:
     preds = []
     gts = []
     with torch.no_grad():
-        for xb, yb in test_loader:
+        for xb, yb, _ in test_loader:
             xb = xb.to(device)
             pred = model(xb).cpu().numpy()
             preds.append(pred)
@@ -221,6 +252,8 @@ def main(args: argparse.Namespace) -> None:
     rmse = np.sqrt(np.mean((preds_real - gts_real) ** 2))
     mae = np.mean(np.abs(preds_real - gts_real))
     print(f"Test RMSE: {rmse:.3f} m | MAE: {mae:.3f} m")
+    if run:
+        wandb.log({"test_rmse_m": rmse, "test_mae_m": mae, "best_val": best_val})
 
     # 保存 scaler 与特征
     with open(os.path.join(cfg.artifacts_dir, "scalers.pkl"), "wb") as f:
@@ -235,6 +268,9 @@ def main(args: argparse.Namespace) -> None:
         )
     save_config(cfg, os.path.join(cfg.artifacts_dir, "config.json"))
     print(f"Artifacts saved to {cfg.artifacts_dir}")
+    if run:
+        wandb.save(os.path.join(cfg.artifacts_dir, "model.pt"))
+        wandb.finish()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -254,6 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pseudo_weight", type=float, default=0.5)
     p.add_argument("--huber_delta", type=float, default=1.0)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--wandb_project", type=str, default='GeoBox', help="wandb project name; leave None to disable logging")
+    p.add_argument("--wandb_run_name", type=str, default=None, help="optional wandb run name")
     return p
 
 

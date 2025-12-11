@@ -6,12 +6,13 @@ from typing import Optional
 class FourierFeatures(nn.Module):
     def __init__(self, in_dim: int, L: int = 6, sigma: float = 10.0):
         super().__init__()
-        self.B = sigma * torch.randn(in_dim, L)
-        self.out_dim = in_dim + 2 * in_dim * L
+        self.register_buffer("B", sigma * torch.randn(in_dim, L))
+        # 输出维度 = 原始 in_dim + sin(L) + cos(L)
+        self.out_dim = in_dim + 2 * L
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [B, in_dim]
-        xb = 2.0 * torch.pi * x @ self.B  # [B, L]
+        xb = 2.0 * torch.pi * x @ self.B  # [B, L], B 已注册 buffer，会随模型移动到正确设备
         sin = torch.sin(xb)
         cos = torch.cos(xb)
         return torch.cat([x, sin, cos], dim=-1)
