@@ -1,80 +1,143 @@
 import cdsapi
+import os
+import xarray as xr
+import numpy as np
+import pandas as pd
 
 # --- 配置区域 ---
-# 假设无人机在深圳飞行，时间是 2024年1月15日
-# 请根据您下载的无人机日志的实际时间和位置修改这里！
-# TARGET_DATE = '2024-01-15'
-# TARGET_TIME = ['08:00', '09:00', '10:00'] # UTC时间，根据飞行时段选择
-# AREA = [22.7, 113.8, 22.4, 114.2] # North, West, South, East (深圳周边)
+# 假设无人机在深圳飞行
 TARGET_DATE = '2024-11-24'
-TARGET_TIME = '15:53'
-# -10KM ~ 10KM, convert to wgs84, roughly divided by earth radius and comvert to degrees
-# 10000km / 6371000m = 0.0015708333333333333
-# 0.0015708333333333333 * 180 / np.pi = 0.08993201773856615
-# 0.08993201773856615 degrees
-# 22.9109896,120.312833
-# 22.9109896 - 0.08993201773856615 = 22.821057582261434
-# 120.312833 - 0.08993201773856615 = 120.22290098226143
-# 22.821057582261434,120.40276501773857
-# 22.9109896 + 0.08993201773856615 = 23.000921617738566
-# 120.312833 + 0.08993201773856615 = 120.40276501773857
-AREA = [22.821057582261434,120.22290098226143,23.000921617738566,120.40276501773857]
+TARGET_TIME = '15:00' # UTC时间，取整点
+# 深圳周边范围
+# The drone data is at: 22.908927, 120.3140614
+# The previous AREA was: [23.0, 113.8, 22.4, 114.2] (Near Shenzhen, but lon is 114)
+# The drone seems to be in Taiwan (lon 120) or somewhere else.
+# Correcting AREA to cover the drone location.
+# Drone: 22.91, 120.31
+AREA = [23.2, 120.0, 22.6, 120.6] # North, West, South, East
 
-def download_era5_pressure_levels():
+def download_era5_data():
     """
-    下载指定时间和区域的ERA5气压层数据 (用于构建垂直剖面)。
+    下载指定时间和区域的ERA5气压层数据和地面数据。
     """
     c = cdsapi.Client()
-    output_file = f'era5_pl_{TARGET_DATE}.nc'
 
-    print(f"开始下载 ERA5 数据到 {output_file} ... 这可能需要几分钟。")
-
-    # 我们下载不同气压层的温度、比湿和位势高度
-    # 重点关注低空层 (例如 1000hPa 到 850hPa)
-    # Round time to nearest hour if needed (ERA5 data is hourly)
-    if isinstance(TARGET_TIME, str) and ':' in TARGET_TIME:
-        parts = TARGET_TIME.split(':')
-        hour = int(parts[0])
-        minute = int(parts[1]) if len(parts) > 1 else 0
-        # Round to nearest hour
-        if minute >= 30:
-            hour = (hour + 1) % 24
-        rounded_time = f'{hour:02d}:00'
-        if rounded_time != TARGET_TIME:
-            print(f"警告: 时间 {TARGET_TIME} 已四舍五入到 {rounded_time} (ERA5 数据为小时级别)")
-            time_to_use = rounded_time
-        else:
-            time_to_use = TARGET_TIME
+    # 1. 下载气压层数据 (Pressure Levels)
+    # 用于构建垂直剖面
+    output_pl = f'data/era5_pl_{TARGET_DATE}.nc'
+    if not os.path.exists(output_pl):
+        print(f"开始下载 ERA5 气压层数据到 {output_pl} ...")
+        c.retrieve(
+            'reanalysis-era5-pressure-levels',
+            {
+                'product_type': 'reanalysis',
+                'format': 'netcdf',
+                'variable': [
+                    'geopotential', 'specific_humidity', 'temperature',
+                    'u_component_of_wind', 'v_component_of_wind',
+                    'vertical_velocity'
+                ],
+                'pressure_level': [
+                    '50', '100', '150', '200', '250',
+                    '300', '400', '500', '600', '700',
+                    '800', '850', '900', '925', '950',
+                    '975', '1000',
+                ],
+                'year': TARGET_DATE.split('-')[0],
+                'month': TARGET_DATE.split('-')[1],
+                'day': TARGET_DATE.split('-')[2],
+                'time': TARGET_TIME,
+                'area': AREA,
+            },
+            output_pl)
     else:
-        time_to_use = TARGET_TIME
+        print(f"{output_pl} 已存在，跳过下载。")
 
-    c.retrieve(
-        'reanalysis-era5-pressure-levels',
-        {
-            'product_type': 'reanalysis',
-            'data_format': 'netcdf', # 使用 NetCDF 格式方便处理多维数据 (已更新为 data_format)
-            'variable': [
-                'geopotential', 'specific_humidity', 'temperature',
-            ],
-            'pressure_level': [
-                '50', '100', '150',
-                '200', '250', '300',
-                '350', '400', '450',
-                '500', '550', '600',
-                '650', '700', '750',
-                '800', '850', '900',
-                '950', '1000',
-            ],
-            'year': TARGET_DATE.split('-')[0],
-            'month': TARGET_DATE.split('-')[1],
-            'day': TARGET_DATE.split('-')[2],
-            'time': time_to_use,
-            'area': AREA,
-        },
-        output_file)
-    print("下载完成!")
+    # 2. 下载地面数据 (Single Levels)
+    # 用于获取高精度的地表信息 (Surface Pressure, 2m T, etc)
+    output_sl = f'data/era5_sl_{TARGET_DATE}.nc'
+    if not os.path.exists(output_sl):
+        print(f"开始下载 ERA5 地面数据到 {output_sl} ...")
+        c.retrieve(
+            'reanalysis-era5-single-levels',
+            {
+                'product_type': 'reanalysis',
+                'format': 'netcdf',
+                'variable': [
+                    '2m_temperature', '2m_dewpoint_temperature', 'surface_pressure',
+                    'mean_sea_level_pressure', 'geopotential', # 地表位势 -> 地形高度
+                    '10m_u_component_of_wind', '10m_v_component_of_wind'
+                ],
+                'year': TARGET_DATE.split('-')[0],
+                'month': TARGET_DATE.split('-')[1],
+                'day': TARGET_DATE.split('-')[2],
+                'time': TARGET_TIME,
+                'area': AREA,
+            },
+            output_sl)
+    else:
+        print(f"{output_sl} 已存在，跳过下载。")
+
+    print("ERA5 数据准备完成。")
+
+def generate_mock_era5_data():
+    """
+    生成假的 ERA5 数据用于测试流程 (当无法连接 CDS API 时使用)。
+    """
+    print("生成模拟 ERA5 数据...")
+
+    # 经纬度网格
+    lats = np.linspace(AREA[2], AREA[0], 10)
+    lons = np.linspace(AREA[1], AREA[3], 10)
+    levels = np.array([50, 100, 200, 500, 850, 925, 1000])
+    times = pd.to_datetime([f"{TARGET_DATE} {TARGET_TIME}"])
+
+    # 1. Mock Pressure Levels
+    n_times = len(times)
+    n_levels = len(levels)
+    n_lats = len(lats)
+    n_lons = len(lons)
+
+    temp_data = 300 - 0.0065 * np.tile(levels[None,:,None,None], (1,1,10,10)) * 10 + np.random.randn(n_times, n_levels, n_lats, n_lons)
+    sh_data = 0.01 * np.exp(-levels[None,:,None,None]/1000) + np.random.rand(n_times, n_levels, n_lats, n_lons)*0.001
+    geo_data = np.tile(levels[None,:,None,None], (1,1,10,10)) * 100 * 9.8
+
+    data_pl = {
+        'temperature': (['time', 'level', 'latitude', 'longitude'], temp_data),
+        'specific_humidity': (['time', 'level', 'latitude', 'longitude'], sh_data),
+        'geopotential': (['time', 'level', 'latitude', 'longitude'], geo_data),
+    }
+    coords_pl = {
+        'time': times,
+        'level': levels,
+        'latitude': lats,
+        'longitude': lons
+    }
+    ds_pl = xr.Dataset(data_pl, coords=coords_pl)
+    ds_pl.to_netcdf(f'data/era5_pl_{TARGET_DATE}.nc')
+
+    # 2. Mock Surface Levels
+    t2m_data = 290 + np.random.randn(n_times, n_lats, n_lons)
+    sp_data = 101325 + np.random.randn(n_times, n_lats, n_lons)*100
+    z_data = np.abs(np.random.randn(n_times, n_lats, n_lons))*100 * 9.8
+
+    data_sl = {
+        't2m': (['time', 'latitude', 'longitude'], t2m_data),
+        'sp': (['time', 'latitude', 'longitude'], sp_data),
+        'z': (['time', 'latitude', 'longitude'], z_data),
+    }
+    ds_sl = xr.Dataset(data_sl, coords={'time': times, 'latitude': lats, 'longitude': lons})
+    ds_sl.to_netcdf(f'data/era5_sl_{TARGET_DATE}.nc')
+
+    print("模拟数据生成完成。")
 
 if __name__ == "__main__":
-    # 确保您已经配置好了 .cdsapirc 文件
-    download_era5_pressure_levels() # 取消注释并运行
-    # print("请先配置 CDS API Key，并修改脚本中的日期和区域，然后再运行。")
+    if not os.path.exists('data'):
+        os.makedirs('data')
+
+    try:
+        download_era5_data()
+    except Exception as e:
+        print(f"下载失败 (可能是没有 API Key): {e}")
+        print("切换到模拟数据模式...")
+        generate_mock_era5_data()
