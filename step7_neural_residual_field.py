@@ -4,9 +4,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+import os
 
 # 检查是否有GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -19,7 +20,7 @@ print(f"Using device: {device}")
 class PositionalEncoding(nn.Module):
     """
     位置编码层。将低维坐标映射到高维空间，帮助网络学习高频细节。
-    类似于 NeRF 中的做法。
+    Inputs: [x, y, z, t]
     """
     def __init__(self, input_dim, L=10):
         super().__init__()
@@ -37,211 +38,256 @@ class PositionalEncoding(nn.Module):
                 encoded.append(torch.sin(x[:, i:i+1] * freq * np.pi))
                 encoded.append(torch.cos(x[:, i:i+1] * freq * np.pi))
         # 连接所有编码特征
-        # 输出维度 = input_dim * (2 * L + 1)
         return torch.cat(encoded, dim=-1)
 
 class ResidualNeuralField(nn.Module):
     """
-    核心神经场模型：一个简单的 MLP。
+    高级神经场模型
+    Inputs:
+        - Spatiotemporal: Lat, Lon, Alt, Time (Encoded)
+        - Physics: P_phy, T_ref (Raw/Scaled)
+        - Environment: Roughness (Raw/Scaled)
     """
-    def __init__(self, input_dim, hidden_dim=256, num_layers=6):
+    def __init__(self, st_dim=4, phys_dim=2, env_dim=1, hidden_dim=256, num_layers=6):
         super().__init__()
 
-        # 1. 位置编码层 (L=8 是一个经验值，可调)
-        self.pe = PositionalEncoding(input_dim=input_dim, L=8)
-        # 计算编码后的特征维度
-        encoded_dim = input_dim * (2 * 8 + 1)
+        # 1. 位置编码层 for Spatiotemporal coordinates
+        self.pe = PositionalEncoding(input_dim=st_dim, L=6)
+        st_encoded_dim = st_dim * (2 * 6 + 1)
+
+        # Total input dimension = Encoded(ST) + Phys + Env
+        total_input_dim = st_encoded_dim + phys_dim + env_dim
 
         layers = []
         # 2. 输入层
-        layers.append(nn.Linear(encoded_dim, hidden_dim))
-        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Linear(total_input_dim, hidden_dim))
+        layers.append(nn.Tanh()) # Tanh or GELU/Swish often better for INRs
 
-        # 3. 隐藏层 (使用残差连接的思想可以加深网络，这里先用简单的MLP)
+        # 3. 隐藏层
         for _ in range(num_layers - 2):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
-            layers.append(nn.ReLU(inplace=True))
+            layers.append(nn.Tanh())
 
         # 4. 输出层 (输出 1 个标量：残差值)
         layers.append(nn.Linear(hidden_dim, 1))
 
         self.net = nn.Sequential(*layers)
 
-    def forward(self, x):
-        # 先进行位置编码，再通过 MLP
-        x_encoded = self.pe(x)
-        return self.net(x_encoded)
+    def forward(self, x_st, x_phys, x_env):
+        # x_st: [batch, 4] (lat, lon, alt, time)
+        # x_phys: [batch, 2] (p_phy, t_ref)
+        # x_env: [batch, 1] (roughness)
+
+        st_encoded = self.pe(x_st)
+
+        # Concatenate all features
+        x_combined = torch.cat([st_encoded, x_phys, x_env], dim=-1)
+
+        return self.net(x_combined)
 
 # ==========================================
-# 2. 数据准备
+# 2. Loss Function (Physics Guided)
 # ==========================================
 
-class DroneResidualDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = torch.tensor(X, dtype=torch.float32).to(device)
-        self.y = torch.tensor(y, dtype=torch.float32).reshape(-1, 1).to(device)
+class PhysicsGuidedLoss(nn.Module):
+    def __init__(self, lambda_smooth=0.01, lambda_phys=0.001):
+        super().__init__()
+        self.mse = nn.MSELoss()
+        self.lambda_smooth = lambda_smooth
+        self.lambda_phys = lambda_phys
+
+    def forward(self, pred_residual, true_residual, inputs_st, model_output):
+        # 1. Data Term
+        data_loss = self.mse(pred_residual, true_residual)
+
+        # 2. Physics/Constraint Term (Optional)
+        # Example: Penalty for excessive residual magnitude (e.g., > 500m is unlikely)
+        # In standardized space, let's say > 3 sigma
+        phys_loss = torch.mean(torch.relu(torch.abs(pred_residual) - 3.0)**2)
+
+        # 3. Smoothness Term (Gradient penalty w.r.t input space)
+        # This is expensive to compute for every batch, usually done via autograd
+        # For this POC, we skip explicit gradient computation or use a simplified weight regularization
+        smooth_loss = 0.0
+
+        total_loss = data_loss + self.lambda_phys * phys_loss + self.lambda_smooth * smooth_loss
+        return total_loss, data_loss
+
+# ==========================================
+# 3. 数据准备 & 交叉验证
+# ==========================================
+
+class DroneDataset(Dataset):
+    def __init__(self, df, scaler_st, scaler_phys, scaler_env, scaler_target):
+        # Features
+        st_cols = ['lat', 'lon', 'h_msl_pred_phy', 'timestamp_norm'] # Use physics predicted height as 'z' input
+        phys_cols = ['h_msl_pred_phy', 't_ref_k'] # Features fed to network
+        env_cols = ['roughness']
+
+        self.X_st = torch.tensor(scaler_st.transform(df[st_cols].values), dtype=torch.float32).to(device)
+        self.X_phys = torch.tensor(scaler_phys.transform(df[phys_cols].values), dtype=torch.float32).to(device)
+        self.X_env = torch.tensor(scaler_env.transform(df[env_cols].values), dtype=torch.float32).to(device)
+
+        # Target
+        self.y = torch.tensor(scaler_target.transform(df['residual_hae'].values.reshape(-1, 1)), dtype=torch.float32).reshape(-1, 1).to(device)
 
     def __len__(self):
         return len(self.y)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        return self.X_st[idx], self.X_phys[idx], self.X_env[idx], self.y[idx]
 
-# 加载数据
-print("加载数据...")
-df = pd.read_csv('data_with_residual.csv')
+def run_training_pipeline():
+    print("加载数据...")
+    df = pd.read_csv('data_with_residual.csv')
 
-# 选择特征 (Inputs)
-# 关键：我们使用物理基准高度(h_hae_pred_phy)作为输入，
-# 因为残差与当前的绝对高度高度相关。
-feature_cols = ['lat', 'lon', 'h_hae_pred_phy']
-# 如果数据跨度大，一定要加入时间特征 (需标准化到0-1之间)
-# feature_cols.append('timestamp_normalized')
+    # Preprocessing Time
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['timestamp_norm'] = (df['timestamp'].astype(np.int64) // 10**9).astype(float)
+    df['timestamp_norm'] = (df['timestamp_norm'] - df['timestamp_norm'].min()) / (df['timestamp_norm'].max() - df['timestamp_norm'].min() + 1e-5)
 
-X_raw = df[feature_cols].values
-y_raw = df['residual_hae'].values
+    # Scalers
+    scaler_st = StandardScaler()
+    scaler_phys = StandardScaler()
+    scaler_env = StandardScaler()
+    scaler_target = StandardScaler()
 
-# **至关重要**：数据标准化 (Standardization)
-# 神经网络对输入范围非常敏感。经纬度、高度必须缩放到相似的范围。
-scaler_X = StandardScaler()
-X_scaled = scaler_X.fit_transform(X_raw)
-# 目标值也建议标准化，训练更稳定，预测时再反变换回来
-scaler_y = StandardScaler()
-y_scaled = scaler_y.fit_transform(y_raw.reshape(-1, 1)).flatten()
+    st_cols = ['lat', 'lon', 'h_msl_pred_phy', 'timestamp_norm']
+    phys_cols = ['h_msl_pred_phy', 't_ref_k']
+    env_cols = ['roughness']
 
-# 划分训练/测试集
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled, y_scaled, test_size=0.2, random_state=42
-)
+    scaler_st.fit(df[st_cols])
+    scaler_phys.fit(df[phys_cols])
+    scaler_env.fit(df[env_cols])
+    scaler_target.fit(df['residual_hae'].values.reshape(-1, 1))
 
-train_dataset = DroneResidualDataset(X_train, y_train)
-test_dataset = DroneResidualDataset(X_test, y_test)
-# 批次大小可以根据显存调整
-train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+    # --- Spatial Cross-Validation ---
+    # We use Grid Search CV concept: split domain into grids.
+    # For simplicity here, we use K-Fold on the sorted spatial data or random K-Fold if dense enough.
+    # The prompt asked for Spatial Grid Search CV.
+    # Let's split by Lat/Lon grid.
 
-# ==========================================
-# 3. 训练循环
-# ==========================================
+    n_splits = 5
+    # Create spatial bins
+    df['lat_bin'] = pd.cut(df['lat'], bins=n_splits, labels=False)
+    df['lon_bin'] = pd.cut(df['lon'], bins=n_splits, labels=False)
+    df['grid_id'] = df['lat_bin'] * n_splits + df['lon_bin']
 
-# 初始化模型
-input_dim = X_scaled.shape[1] # 特征数量
-model = ResidualNeuralField(input_dim=input_dim).to(device)
-criterion = nn.MSELoss() # 均方误差损失
-# 使用 Adam 优化器，学习率是一个关键超参数
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    unique_grids = df['grid_id'].unique()
+    kf = KFold(n_splits=min(len(unique_grids), 5), shuffle=True, random_state=42)
 
-num_epochs = 1000 # 训练轮数
-train_losses = []
-test_losses = []
+    results = []
 
-print(f"开始训练神经场 (Epochs: {num_epochs})...")
+    for fold, (train_grid_idx, test_grid_idx) in enumerate(kf.split(unique_grids)):
+        print(f"\n--- Fold {fold+1} ---")
+        train_grids = unique_grids[train_grid_idx]
+        test_grids = unique_grids[test_grid_idx]
 
-for epoch in range(num_epochs):
-    model.train()
-    running_loss = 0.0
-    for inputs, targets in train_loader:
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item() * inputs.size(0)
-    epoch_train_loss = running_loss / len(train_dataset)
-    train_losses.append(epoch_train_loss)
+        train_df = df[df['grid_id'].isin(train_grids)]
+        test_df = df[df['grid_id'].isin(test_grids)]
 
-    # 验证循环
+        if len(train_df) == 0 or len(test_df) == 0:
+            print("Fold empty, skipping.")
+            continue
+
+        train_dataset = DroneDataset(train_df, scaler_st, scaler_phys, scaler_env, scaler_target)
+        test_dataset = DroneDataset(test_df, scaler_st, scaler_phys, scaler_env, scaler_target)
+
+        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+        test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+        # Model
+        model = ResidualNeuralField(st_dim=4, phys_dim=2, env_dim=1).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        loss_fn = PhysicsGuidedLoss()
+
+        # Train
+        for epoch in range(50): # 50 epochs for demo
+            model.train()
+            train_loss_sum = 0
+            for x_st, x_phys, x_env, y in train_loader:
+                optimizer.zero_grad()
+                pred = model(x_st, x_phys, x_env)
+                loss, data_loss = loss_fn(pred, y, x_st, model)
+                loss.backward()
+                optimizer.step()
+                train_loss_sum += data_loss.item()
+
+            if (epoch+1) % 25 == 0:
+                print(f"Epoch {epoch+1}, Train Loss: {train_loss_sum/len(train_loader):.4f}")
+
+        # Evaluate
+        model.eval()
+        preds = []
+        trues = []
+        with torch.no_grad():
+            for x_st, x_phys, x_env, y in test_loader:
+                pred = model(x_st, x_phys, x_env)
+                preds.append(pred.cpu().numpy())
+                trues.append(y.cpu().numpy())
+
+        preds = np.concatenate(preds)
+        trues = np.concatenate(trues)
+
+        # Inverse transform
+        preds_real = scaler_target.inverse_transform(preds)
+        trues_real = scaler_target.inverse_transform(trues)
+
+        rmse = np.sqrt(np.mean((preds_real - trues_real)**2))
+        print(f"Fold {fold+1} RMSE: {rmse:.4f} m")
+        results.append(rmse)
+
+        # Visualization for the first fold
+        if fold == 0:
+            visualize_field(model, df, scaler_st, scaler_phys, scaler_env, scaler_target)
+
+    print("\nMean CV RMSE:", np.mean(results))
+
+def visualize_field(model, df, s_st, s_phys, s_env, s_target):
+    print("生成残差场可视化...")
+    # Generate Grid
+    res = 50
+    lats = np.linspace(df['lat'].min(), df['lat'].max(), res)
+    lons = np.linspace(df['lon'].min(), df['lon'].max(), res)
+    lat_mesh, lon_mesh = np.meshgrid(lats, lons)
+
+    # Fixed other vars
+    avg_h = df['h_msl_pred_phy'].mean()
+    avg_t = df['t_ref_k'].mean()
+    avg_rough = df['roughness'].mean()
+    avg_time = 0.5 # Normalized time
+
+    # Flatten
+    n_points = res * res
+    flat_lats = lat_mesh.flatten()
+    flat_lons = lon_mesh.flatten()
+
+    # Prepare Inputs
+    # ST: lat, lon, h, t
+    st_input = np.stack([flat_lats, flat_lons, np.full(n_points, avg_h), np.full(n_points, avg_time)], axis=1)
+    phys_input = np.stack([np.full(n_points, avg_h), np.full(n_points, avg_t)], axis=1)
+    env_input = np.stack([np.full(n_points, avg_rough)], axis=1)
+
+    # Scale
+    st_tensor = torch.tensor(s_st.transform(st_input), dtype=torch.float32).to(device)
+    phys_tensor = torch.tensor(s_phys.transform(phys_input), dtype=torch.float32).to(device)
+    env_tensor = torch.tensor(s_env.transform(env_input), dtype=torch.float32).to(device)
+
     model.eval()
-    running_test_loss = 0.0
     with torch.no_grad():
-        for inputs, targets in test_loader:
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            running_test_loss += loss.item() * inputs.size(0)
-    epoch_test_loss = running_test_loss / len(test_dataset)
-    test_losses.append(epoch_test_loss)
+        pred_scaled = model(st_tensor, phys_tensor, env_tensor).cpu().numpy()
 
-    if (epoch + 1) % 10 == 0:
-        print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {epoch_train_loss:.6f}, Test Loss: {epoch_test_loss:.6f}")
+    pred_real = s_target.inverse_transform(pred_scaled).reshape(res, res)
 
-print("训练完成。")
-
-# 绘制训练曲线
-plt.figure(figsize=(10, 5))
-plt.plot(train_losses, label='Train Loss (MSE)')
-plt.plot(test_losses, label='Test Loss (MSE)')
-plt.xlabel('Epoch')
-plt.ylabel('Loss (Standardized scale)')
-plt.legend()
-plt.title('Neural Field Training Progress')
-plt.show()
-
-# ==========================================
-# 4. 评估与场可视化 (关键!)
-# ==========================================
-
-model.eval()
-with torch.no_grad():
-    # --- 定量评估 (RMSE) ---
-    # 获取测试集的预测结果 (标准化后的)
-    y_pred_scaled = model(torch.tensor(X_test, dtype=torch.float32).to(device)).cpu().numpy()
-    # 反标准化回真实单位（米）
-    y_pred_residual = scaler_y.inverse_transform(y_pred_scaled).flatten()
-    y_true_residual = scaler_y.inverse_transform(y_test.reshape(-1, 1)).flatten()
-
-    # 计算最终 RMSE
-    rmse = np.sqrt(np.mean((y_true_residual - y_pred_residual)**2))
-    print(f"\n神经场测试集 RMSE: {rmse:.3f} 米")
-
-    # --- 定性评估：可视化重建的残差场 ---
-    # 我们创建一个密集的网格来“查询”我们的神经场，看看它学到了什么结构
-    print("正在生成残差场热力图...")
-
-    # 1. 定义网格范围 (根据数据范围)
-    lat_min, lat_max = df['lat'].min(), df['lat'].max()
-    lon_min, lon_max = df['lon'].min(), df['lon'].max()
-    # 固定一个高度进行切片可视化，例如平均飞行高度
-    avg_h_phy = df['h_hae_pred_phy'].mean()
-
-    # 2. 生成密集网格点 (例如 100x100 的分辨率)
-    resolution = 100
-    lat_grid = np.linspace(lat_min, lat_max, resolution)
-    lon_grid = np.linspace(lon_min, lon_max, resolution)
-    lon_mesh, lat_mesh = np.meshgrid(lon_grid, lat_grid)
-
-    # 3. 构建查询输入
-    query_points = np.stack([
-        lat_mesh.flatten(),
-        lon_mesh.flatten(),
-        np.full(resolution*resolution, avg_h_phy) # 所有点高度相同
-    ], axis=1)
-
-    # 4. 标准化查询输入 (非常重要! 必须用训练时的Scaler)
-    query_points_scaled = scaler_X.transform(query_points)
-    query_tensor = torch.tensor(query_points_scaled, dtype=torch.float32).to(device)
-
-    # 5. 查询神经场
-    predicted_residual_scaled = model(query_tensor).cpu().numpy()
-
-    # 6. 反标准化结果
-    predicted_residual_field = scaler_y.inverse_transform(predicted_residual_scaled)
-    residual_grid = predicted_residual_field.reshape(resolution, resolution)
-
-    # 7. 绘图
-    plt.figure(figsize=(12, 10))
-    # 绘制残差场热力图
-    contour = plt.contourf(lon_mesh, lat_mesh, residual_grid, levels=50, cmap='RdBu_r', alpha=0.8)
-    cbar = plt.colorbar(contour)
-    cbar.set_label('Predicted Residual (m) - Red is positive, Blue is negative')
-
-    # 叠加真实的无人机轨迹点，颜色表示真实残差
-    scatter = plt.scatter(df['lon'], df['lat'], c=df['residual_hae'], cmap='RdBu_r',
-                          edgecolor='k', s=20, vmin=residual_grid.min(), vmax=residual_grid.max())
-
-    plt.title(f'Reconstructed Residual Field at H={avg_h_phy:.0f}m (Neural Field View)')
+    plt.figure(figsize=(10, 8))
+    plt.contourf(lon_mesh, lat_mesh, pred_real, levels=20, cmap='RdBu_r')
+    plt.colorbar(label='Predicted Residual (m)')
+    plt.scatter(df['lon'], df['lat'], c=df['residual_hae'], cmap='RdBu_r', edgecolors='k', s=20)
+    plt.title('Reconstructed Residual Field (Neural Field)')
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
-    plt.show()
+    plt.savefig('neural_field_vis.png')
+    print("可视化已保存到 neural_field_vis.png")
 
-print("可视化完成。热力图展示了神经场学习到的空间结构。")
-print("散点是真实的训练数据。如果神经场工作正常，热力图的颜色应该与散点颜色大致吻合，并且在散点之间平滑过渡。")
+if __name__ == "__main__":
+    run_training_pipeline()
