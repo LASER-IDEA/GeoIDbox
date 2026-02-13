@@ -26,7 +26,7 @@ ENV/
 env/
 .venv
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
@@ -36,35 +36,80 @@ env/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# GeoIDbox specific
 # Data files (large)
-*.csv
-*.nc
-*.ulg
-*.ulg.csv
+data/external/*.tif
+data/external/*.zip
+data/external/*.hdr
+data/external/*.tfw
+data/external/*.nc
+data/processed/*.csv
+data/raw/*.csv
 
-# Model artifacts
-artifacts/*.pt
-artifacts/*.pkl
-artifacts/*.json
-!artifacts/.gitkeep
-
-# Geoid files (large binary)
-geoids/*.pgm
-geoids/*.gdf
-
-# Reports (generated)
-data/reports/**/*.csv
-data/reports/**/*.png
-data/reports/**/*.pdf
+# Model checkpoints
+*.pth
+*.ckpt
+models/*.pth
+models/*.ckpt
 
 # Logs
 *.log
+logs/
+nohup.out
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Keep directory structure
-!.gitkeep
-__pycache__/
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Archive (old experiments)
+tmp/data_archive/
+tmp/scripts_archive/
+tmp/figures_archive/
+tmp/experiments_archive/
+tmp/docs_archive/
+
+# Large result files
+experiments/results/*.png
+experiments/results/*.json
+*.png
+
+# Keep structure but ignore content
+!data/external/.gitkeep
+!data/processed/.gitkeep
+!data/raw/.gitkeep
+!models/.gitkeep
+!experiments/baselines/.gitkeep
+!experiments/st_gnn/.gitkeep
+!experiments/deep_ensemble/.gitkeep
+!experiments/results/.gitkeep
+experiments/results/deep_ensemble/model_0.pt
+experiments/results/deep_ensemble/model_1.pt
+experiments/results/deep_ensemble/model_2.pt
+experiments/results/deep_ensemble/model_3.pt
+experiments/results/deep_ensemble/model_4.pt
+experiments/results/neural_model.pt
+experiments/results/advanced_pinn/model.pt
+.gitignore
+experiments/results/spatial_nf/model.pt
+.gitignore
+experiments/results/st_gnn/mlp_baseline.pt
+experiments/results/ablation/no_physics_features.json
+experiments/results/advanced_pinn/results.json
+experiments/results/correct_comparison/results.json
+experiments/results/deep_ensemble/results.json
+experiments/results/deep_ensemble_final/results.json
+experiments/results/instant_ngp/results.json
+experiments/results/neural_field_advanced/model.pt
+experiments/results/neural_field_advanced/results.json
+experiments/results/optimized_nf/results.json
+experiments/results/siren/results.json
+experiments/results/spatial_nf/results.json
+experiments/results/st_gnn/results.json
+experiments/results/st_gnn/st_gnn_results.csv
+experiments/results/st_gnn/stgnn_model.pt
+experiments/results/with_dem/results.json
+experiments/results/with_real_srtm/results.json

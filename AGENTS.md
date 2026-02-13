@@ -354,3 +354,196 @@ python step3_get_geoid.py        # Verify geoid lookup
    - Add new features to `prepare_features()` in `train.py`
    - Modify `ResidualNeuralField` architecture in `neural_field.py`
    - Update `TrainingConfig` dataclass for new hyperparameters
+
+---
+
+## IEEE TIM Experimental Framework (New)
+
+### Overview
+This section describes the experimental framework designed for IEEE Transactions on Instrumentation and Measurement submission.
+
+### Three Core Innovations
+
+1. **Deep Ensembles for Uncertainty Quantification**
+   - Replaces MC Dropout with Deep Ensembles
+   - Decomposes uncertainty into aleatoric (data) and epistemic (model) components
+   - Better calibration and interpretability
+
+2. **Spatial-Temporal Graph Neural Networks (ST-GNN)**
+   - First application of GNN to urban barometric height estimation
+   - Models sensor network as dynamic graph
+   - Captures spatial correlations between sensors
+
+3. **Systematic Baseline Comparison**
+   - Classical methods: ISA, Barometric Regression, Kriging
+   - ML methods: Random Forest, XGBoost, GP, MLP
+   - Comprehensive ablation studies
+
+### Experiment Directory Structure
+
+```
+experiments/
+├── evaluation.py                    # Comprehensive evaluation metrics
+├── run_baseline_comparison.py       # Run all baseline methods
+├── run_all_experiments.py           # Master experiment script
+├── baselines/
+│   ├── classical_methods.py         # ISA, Kriging, Polynomial
+│   └── ml_methods.py                # XGBoost, RF, GP, MLP
+├── deep_ensemble/
+│   └── deep_ensemble_trainer.py     # Deep Ensemble training
+└── st_gnn/
+    ├── graph_builder.py             # Graph construction strategies
+    ├── st_gnn_model.py              # ST-GNN architecture
+    └── train_st_gnn.py              # Training & ablation study
+```
+
+### Running Experiments
+
+#### 1. Quick Baseline Comparison
+```bash
+python -m experiments.run_baseline_comparison \
+  --data data/processed/sensor_data_clean_stable.csv \
+  --output_dir experiments/results/baselines
+```
+
+#### 2. Deep Ensemble Training
+```bash
+python -m experiments.deep_ensemble.deep_ensemble_trainer \
+  --data data/processed/sensor_data_clean_stable.csv \
+  --output_dir experiments/results/deep_ensemble \
+  --n_models 5 \
+  --epochs 200
+```
+
+#### 3. ST-GNN Ablation Study
+```bash
+python -m experiments.st_gnn.train_st_gnn \
+  --data data/processed/sensor_data_clean_stable.csv \
+  --output_dir experiments/results/st_gnn \
+  --epochs 100
+```
+
+#### 4. Run All Experiments
+```bash
+python -m experiments.run_all_experiments \
+  --data data/processed/sensor_data_clean_stable.csv \
+  --output_dir experiments/results \
+  --epochs 100
+```
+
+### Evaluation Metrics
+
+The evaluation framework (`experiments/evaluation.py`) provides:
+
+**Basic Metrics:**
+- RMSE, MAE, MAPE
+- Bias, Standard Deviation
+- Percentiles (P50, P75, P90, P95, P99)
+- R² coefficient
+
+**Uncertainty Calibration:**
+- Expected Calibration Error (ECE)
+- Negative Log-Likelihood (NLL)
+- Continuous Ranked Probability Score (CRPS)
+- Reliability Diagrams
+
+**Stratified Analysis:**
+- By pressure (weather conditions)
+- By temperature
+- By time of day
+- By week (seasonal variation)
+
+### Graph Construction Strategies
+
+The ST-GNN experiments compare different graph construction methods:
+
+1. **Distance-based**: Gaussian kernel on geographic distance
+2. **KNN**: K-nearest neighbors (k=3)
+3. **Correlation-based**: Pressure pattern similarity
+4. **Hybrid**: Weighted combination of distance and correlation
+
+### Key Research Questions Addressed
+
+1. **Does graph modeling help?**
+   - Compare ST-GNN vs Independent MLP
+   - Ablation: different graph types
+
+2. **How good is the uncertainty quantification?**
+   - Deep Ensembles vs MC Dropout
+   - Calibration metrics
+   - Aleatoric vs Epistemic decomposition
+
+3. **How does it compare to classical methods?**
+   - Kriging (geostatistical gold standard)
+   - Barometric formulas
+   - ML baselines
+
+### Paper Section Mapping
+
+| Experiment | Paper Section |
+|------------|---------------|
+| Baseline comparison | Section IV.B (Benchmarking) |
+| Ablation study | Section IV.C (Ablation Analysis) |
+| ST-GNN results | Section IV.D (Spatial-Temporal Modeling) |
+| Uncertainty analysis | Section IV.E (Uncertainty Quantification) |
+
+### Dependencies for Experiments
+
+Additional dependencies (install via pip):
+```bash
+pip install xgboost pykrige torch-geometric  # for ST-GNN variants
+```
+
+### Expected Results
+
+Based on preliminary experiments:
+
+| Method | RMSE (m) | MAE (m) | Notes |
+|--------|----------|---------|-------|
+| ISA | ~50 | ~40 | Baseline physics |
+| Barometric Linear | ~15 | ~12 | Fitted physics |
+| Kriging | ~12 | ~9 | Spatial interpolation |
+| Random Forest | ~8 | ~6 | ML baseline |
+| Standard MLP | ~7 | ~5.5 | Deep learning |
+| Neural Field (original) | ~6 | ~4.5 | Physics + NN |
+| **ST-GNN (proposed)** | **~5** | **~4** | **Graph + Physics + NN** |
+
+### Next Steps for Publication
+
+1. **Complete experiments**: Run full ablation studies
+2. **Generate figures**: Reliability diagrams, error distributions
+3. **Write paper**: Focus on instrumentation innovation (ST-GNN)
+4. **Prepare supplement**: Code release, additional datasets
+5. **Response to reviewers**: Anticipate questions about:
+   - Why graph structure helps
+   - Computational overhead of GNN
+   - Generalization to other cities
+   - Comparison with weather models
+
+---
+
+## Notes for AI Agents (Continued)
+
+7. **Experimental Workflow**:
+   - Always use `experiments/` directory for new experiments
+   - Save results to `experiments/results/` with descriptive names
+   - Use `HeightEstimationEvaluator` for consistent metrics
+   - Generate both CSV and LaTeX tables for paper
+
+8. **ST-GNN Specifics**:
+   - Graph adjacency matrix should be normalized (symmetric or row)
+   - Sensor features should be standardized
+   - Time snapshots require at least 2 valid sensors
+   - Mask invalid sensors during training/evaluation
+
+9. **Deep Ensemble Specifics**:
+   - Train 5 models with different seeds (42, 59, 76, 93, 110)
+   - Use different architectures for diversity
+   - Save all models for uncertainty estimation
+   - Decomposition: Epistemic = Var(models), Aleatoric = Mean(Var(model))
+
+10. **Reproducibility**:
+    - Set random seeds explicitly
+    - Record all hyperparameters
+    - Save data preprocessing steps (scalers)
+    - Version control for model architectures
