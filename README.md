@@ -1,4 +1,51 @@
-## 高度盒子
+# GeoIDbox: Urban Barometric Altitude Estimation
+
+> **IEEE TIM Paper**: Urban Barometric Altitude Estimation via Physics-Informed Neural Fields with Curriculum Learning and Multi-Resolution Hash Encoding
+
+## 🎯 Key Results
+
+| Metric | Value |
+|--------|-------|
+| **Best MAE** | **3.79m** (Sensor 42508217) |
+| **Average MAE** | 16.53m (±22.11m) |
+| **Improvement vs Physics** | 89.2% |
+| **Improvement vs SOTA** | 56.2% |
+
+## 📁 Paper Materials
+
+LaTeX source code and figures for IEEE TIM submission:
+
+```bash
+# Navigate to paper directory
+cd paper/
+
+# Compile with LaTeX
+pdflatex main.tex
+bibtex main
+pdflatex main.tex
+pdflatex main.tex
+
+# Or use latexmk
+latexmk -pdf main.tex
+```
+
+### Paper Structure
+- `main.tex` - Main LaTeX document
+- `method.tex` - Methodology section (Hash Encoding, Curriculum Learning, Terrain Features)
+- `experiment.tex` - Experiments and results (7-fold LOSO validation)
+- `figures/` - Generated figures (PDF/PNG)
+- `tables/` - LaTeX tables
+
+### Regenerating Figures
+```bash
+source ~/miniconda3/bin/activate graphmamba
+python paper/generate_figures_simple.py
+python paper/generate_tables.py
+```
+
+---
+
+## 高度盒子 (Original Notes)
 
 ### todo
 #### 从现有的一期数据中能挖出什么？
