@@ -113,3 +113,6 @@ PAPER_SUBMISSION_CHECKLIST.md
 
 *.txt
 docs/nouse/
+
+*.pt
+*.json

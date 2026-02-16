@@ -126,7 +126,7 @@ Output: Altitude residual (meters)
 - Requires ERA5 data (internet dependency)
 - Training time: 2 hours (not real-time adaptive)
 
-### Future Directions
+### Future Directions (todo)
 - Meta-learning for rapid new-sensor adaptation
 - Physics-informed neural operators
 - Extension to 3D atmospheric field estimation
