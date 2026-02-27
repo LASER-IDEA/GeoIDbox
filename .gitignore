@@ -116,3 +116,9 @@ docs/nouse/
 
 *.pt
 *.json
+
+paper/image/
+paper/*.tex
+paper/sections/
+paper/*.bib
+paper/*.cls
