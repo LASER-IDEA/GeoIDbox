@@ -1,0 +1,37 @@
+% --- Teaser Image Start ---
+\begin{figure*}[!ht]
+\centering
+\includegraphics[width=0.9\textwidth]{image/teaser1.pdf} % 请替换您的图片文件名
+\caption{The proposed edge-sensing and altitude harmonization framework. (a) Heterogeneous vertical navigation systems (Barometric vs. GNSS HAE) create severe altitude discrepancies and collision risks in VLL urban airspace. (b) Distributed GeoBox edge terminals are deployed to collect sparse, synchronized 4D atmospheric and geometric data. (c) The proposed PINF algorithm reconstructs these sparse measurements into a continuous, high-precision unified geometric height transformation field for safe U-space operations.}
+    \label{fig:concept}
+\end{figure*}
+% --- Teaser Image End ---
+\section{Introduction}
+\label{sec:intro}
+
+\IEEEPARstart{T}{he} rapid proliferation of Unmanned Aircraft Systems (UAS) and the emerging Urban Air Mobility (UAM) sector have fundamentally transformed the operational paradigm of Very Low-Level (VLL) airspace. A critical, yet unresolved, challenge in ensuring the safety of high-density air traffic is the harmonization of heterogeneous vertical navigation systems. Historically, global aviation has relied on a dual-reference architecture: manned aviation utilizes Barometric Pressure Altitude referenced to the International Standard Atmosphere (ISA) to ensure relative separation within the same air mass, whereas UAS predominantly operate on Geometric Altitude (Height Above Ellipsoid, HAE) derived from Global Navigation Satellite Systems (GNSS) \cite{simonetti2024geodetic, zhao2023vertical}. 
+
+These two measurement domains—geopotential and geometric—are physically distinct. Due to non-standard atmospheric conditions (e.g., temperature deviations from ISA, pressure gradients) and geoid undulations, the discrepancy between pressure altitude and true geometric height can exceed hundreds of meters \cite{narayanan2022enhanced}. In obstacle-rich urban environments where UAS operate with minimal vertical safety margins, such discrepancies pose unacceptable collision risks and severely hinder the deployment of systematic U-space services.
+
+% \subsection{Current Methodologies and Limitations}
+
+Bridging the gap between barometric and geometric altitude has evolved from early inertial-barometric integrations to modern data-driven methodologies. State-of-the-art approaches leverage high-fidelity Numerical Weather Prediction (NWP) models, such as ECMWF's ERA5, as "virtual sensors" to reconstruct the atmospheric profile and correct the barometric formula \cite{schumann2017use}. For instance, algorithms like Baro-ARAIM and BiG-C have demonstrated the capability to reduce vertical errors to approximately 4--30 meters by dynamically estimating temperature lapse rates and pressure fields \cite{simonetti2024geodetic, narayanan2022enhanced}.
+
+Despite these advancements, existing methodologies exhibit critical limitations in urban VLL airspace:
+\begin{enumerate}
+    \item \textbf{Spatiotemporal Latency}: High-fidelity NWP models often suffer from coarse grid resolutions (e.g., $0.25^\circ$) and publication latency, failing to capture high-frequency microclimate variations (e.g., urban heat islands, building wake turbulence) inherent to urban canyons.
+    \item \textbf{Sensor-Specific Biases}: Low-cost micro-electro-mechanical systems (MEMS) barometers deployed in commercial UAS and edge IoT nodes are highly susceptible to environmental influences, thermal drift, and aerodynamic interference, complicating absolute height determination \cite{sun20253d, li2023precise}.
+    \item \textbf{Poor Spatial Generalization}: Traditional machine learning approaches (e.g., Random Forests) trained to correct these localized errors typically act as "black boxes." They often violate physical atmospheric laws in data-sparse regions, leading to severe extrapolation errors when deployed to unseen urban topologies \cite{zhang2020urban}.
+\end{enumerate}
+
+% \subsection{Proposed System and Contributions}
+
+To address these instrumentation and measurement challenges, this paper proposes a novel multi-sensor fusion framework comprising a low-cost edge-sensing terminal (the "Height Box") and a Physics-Informed Neural Field (PINF) algorithm. Instead of solely relying on delayed global weather models or unconstrained machine learning, our system deploys distributed edge instruments to capture synchronized 4D atmospheric profiles. We then formulate the altitude conversion as a continuous spatial residual learning problem. By embedding the hydrostatic equation into the neural architecture and utilizing multi-resolution hash encoding, the proposed system learns high-frequency urban spatial features while strictly adhering to physical atmospheric constraints.
+
+The main contributions of this work are as follows:
+\begin{enumerate}
+    \item \textbf{An Edge-Sensing Measurement Framework}: We present the design and deployment of a multi-sensor acquisition system that fuses GNSS, barometric, and hygrometric data, providing a scalable hardware solution for urban atmospheric sampling.
+    \item \textbf{Physics-Informed Neural Fields for Altimetry}: We pioneer the use of Neural Fields for atmospheric parameter estimation. By incorporating Instant-NGP style multi-resolution hash encoding, the model efficiently captures multi-scale spatial patterns, achieving a Mean Absolute Error (MAE) of 3.79 meters—a 56.2\% improvement over prior state-of-the-art data-driven methods.
+    \item \textbf{Terrain-Aware Curriculum Learning}: To overcome the challenge of altitude extrapolation, we introduce a novel three-stage curriculum learning strategy (easy $\rightarrow$ medium $\rightarrow$ hard) combined with terrain-aware features (sensor density and local roughness). This methodology accelerates convergence and mitigates generalization errors in high-altitude boundary conditions.
+    \item \textbf{Rigorous Metrological Validation}: Unlike prior studies relying on random data splits, we validate our system using a robust Leave-One-Sensor-Out (LOSO) cross-validation protocol on a massive real-world dataset. This ensures the quantified uncertainty reflects true operational reliability for heterogeneous low-altitude traffic.
+\end{enumerate}
