@@ -350,9 +350,13 @@ def train_with_curriculum(model, stages, test_df, h_physics_test, y_test_alt,
 
 # ==================== 6. 主流程 ====================
 
-def run_advanced_validation(df):
+def run_advanced_validation(df, exclude_sensor=None):
     """
     运行高级改进的 LOSO 验证
+    
+    Args:
+        df: DataFrame with sensor data
+        exclude_sensor: Optional sensor ID to exclude (e.g., outlier)
     """
     print("="*70)
     print("ADVANCED IMPROVEMENTS: Hash + Curriculum + Terrain")
@@ -363,8 +367,14 @@ def run_advanced_validation(df):
     df = compute_terrain_features(df)
     
     # 2. LOSO 验证
-    print("\n[2] LOSO 验证 (7 folds, 充分训练)...")
     sensors = sorted(df['uid'].unique())
+    
+    # Optionally exclude problematic sensor
+    if exclude_sensor is not None:
+        sensors = [s for s in sensors if exclude_sensor not in str(s)]
+        print(f"\n[2] LOSO 验证 ({len(sensors)} folds, 排除 {exclude_sensor})...")
+    else:
+        print(f"\n[2] LOSO 验证 ({len(sensors)} folds, 充分训练)...")
     
     results = {
         'baseline': [],
@@ -465,8 +475,22 @@ def run_advanced_validation(df):
 # ==================== 主函数 ====================
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--use-stabilized', action='store_true', 
+                       help='Use stabilized GNSS heights')
+    parser.add_argument('--exclude-sensor', type=str, default=None,
+                       help='Exclude sensor ID substring (e.g., "27373510")')
+    args = parser.parse_args()
+    
     print("Loading data...")
-    df = pd.read_csv('data/processed/sensor_data_with_real_era5.csv')
+    if args.use_stabilized and Path('data/processed/sensor_data_stabilized.csv').exists():
+        df = pd.read_csv('data/processed/sensor_data_stabilized.csv')
+        print("✓ Using STABILIZED GNSS heights")
+    else:
+        df = pd.read_csv('data/processed/sensor_data_with_real_era5.csv')
+        print("Using original GNSS heights")
+    
     df['processed_time'] = pd.to_datetime(df['processed_time'])
     
     # 物理基线
@@ -483,4 +507,4 @@ if __name__ == '__main__':
     print(f"Data: {len(df)} samples, {df['uid'].nunique()} sensors")
     
     # 运行验证
-    results = run_advanced_validation(df)
+    results = run_advanced_validation(df, exclude_sensor=args.exclude_sensor)

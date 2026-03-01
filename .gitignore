@@ -122,3 +122,6 @@ paper/*.tex
 paper/sections/
 paper/*.bib
 paper/*.cls
+
+tests/
+paper/figures/new_experiments/*.npy

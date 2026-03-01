@@ -1,0 +1,6 @@
+Method,MAE,RMSE,R2,Improvement_vs_Physics
+Physics Baseline,35.97,43.16,,0.0%
+Random Forest,36.72,47.74,,-2.1%
+Basic Neural Field,16.66,22.10,,52.4%
+NF + ERA5,14.13,18.45,,59.7%
+Proposed (Refined, cfgG warmup),21.85,,,39.3%
