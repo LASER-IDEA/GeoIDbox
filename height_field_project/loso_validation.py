@@ -81,11 +81,15 @@ def train_single_fold(
     test_df, _ = compute_physics_baseline(test_df, p_ref=phys_params.p_ref, t_ref_method="mean", convert_to_hae=False)
     
     # Create sensor mapping (only from training sensors)
-    sensor_mapping = {uid: idx for idx, uid in enumerate(train_df['uid'].unique())}
+    train_sensors = train_df['uid'].unique()
+    sensor_mapping = {uid: idx for idx, uid in enumerate(train_sensors)}
     
-    # Add held-out sensor to mapping (for inference, though it won't be trained)
-    if held_out_sensor not in sensor_mapping:
-        sensor_mapping[held_out_sensor] = len(sensor_mapping)
+    # LOSO Fix: Use a special "unknown sensor" index (0) for held-out sensor
+    # Index 0 is reserved for unknown/unseen sensors - we'll use a default embedding
+    # Shift training sensor indices by 1 to make room for index 0 = "unknown"
+    sensor_mapping = {uid: idx + 1 for idx, uid in enumerate(train_sensors)}
+    UNKNOWN_SENSOR_IDX = 0
+    sensor_mapping[held_out_sensor] = UNKNOWN_SENSOR_IDX  # Held-out gets index 0
     
     train_df['sensor_idx'] = train_df['uid'].map(sensor_mapping)
     val_df['sensor_idx'] = val_df['uid'].map(sensor_mapping)
@@ -146,9 +150,10 @@ def train_single_fold(
         test_ds, batch_size=args.batch_size, shuffle=False
     )
     
-    # Create model
+    # Create model with +1 for unknown sensor slot (index 0)
+    n_train_sensors = len(train_sensors)
     model = PressureCorrectionPINN(
-        n_sensors=len(sensor_mapping),
+        n_sensors=n_train_sensors + 1,  # +1 for unknown sensor at index 0
         embedding_dim=args.sensor_embedding_dim,
         hash_levels=args.hash_levels,
         hash_features=args.hash_features,
@@ -158,6 +163,11 @@ def train_single_fold(
         dropout=args.dropout,
         use_siren=args.use_siren
     ).to(device)
+    
+    # LOSO Fix: Initialize unknown sensor embedding (index 0) to zeros
+    # This makes the model fall back to spatial-only features for held-out sensors
+    with torch.no_grad():
+        model.sensor_embedding.weight[UNKNOWN_SENSOR_IDX].fill_(0.0)
     
     optimizer = torch.optim.AdamW(
         model.parameters(),

@@ -11,7 +11,7 @@ import argparse
 import os
 import pickle
 import random
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from datetime import datetime
 
 import numpy as np
@@ -212,14 +212,14 @@ def train_epoch(
         
         # Hydrostatic constraint (if enabled)
         if lambda_hydro > 0:
-            # Enable gradient for z
-            z_with_grad = batch['z'].clone().requires_grad_(True)
+            # Enable gradient for z (must be on correct device first)
+            z_with_grad = batch['z'].to(device).clone().requires_grad_(True)
             
             # Recompute with gradient-enabled z
             delta_p = model(
                 batch['lat'].to(device),
                 batch['lon'].to(device),
-                z_with_grad.to(device),
+                z_with_grad,
                 batch['t'].to(device),
                 batch['temperature'].to(device),
                 batch['humidity'].to(device),
