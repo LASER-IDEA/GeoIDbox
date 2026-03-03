@@ -12,7 +12,7 @@ The field experiments were conducted in a densely built urban sector in Shenzhen
 
 To supply the necessary meteorological priors, ERA5 atmospheric reanalysis data from the ECMWF (including 2-meter temperature $t_{2m}$ and surface pressure $sp$ at $0.25^\circ$ resolution) was utilized. Finally, a global physical calibration established the baseline barometric reference parameters.
 
-The training framework was implemented utilizing PyTorch and executed on an NVIDIA GPU workstation.
+The training and inference framework was implemented utilizing PyTorch~2.x and executed on an NVIDIA L20 GPU (45~GB GDDR6X VRAM, CUDA~12.x).
 
 \begin{table}[t]
 \caption{Dataset Statistics}
@@ -96,8 +96,19 @@ The results reveal several critical insights:
 
     \item \textbf{ML regressors degrade under zero-shot conditions}: Random Forest (64.82 m) and XGBoost (65.09 m) perform substantially worse than the physics baseline. Because \emph{pressure\_bias} is dominated by hardware-specific calibration offsets that are not recoverable from geographic or meteorological features alone, tree-based models overfit sensor-specific patterns during training and fail catastrophically on the held-out device---confirming that this is an extrapolation problem that feature regression cannot solve.
 
-    \item \textbf{PINF dramatically outperforms all baselines}: Our proposed framework achieves 3.55 m MAE, representing a \textbf{90.4\% improvement} over the physics baseline and more than \textbf{10$\times$ better} than the best conventional baseline (IDW/Kriging).
+    \item \textbf{PINF dramatically outperforms all baselines}: Our proposed framework achieves 3.55 m MAE, representing a \textbf{90.4\% improvement} over the physics baseline and more than \textbf{10$\times$ better} than the best conventional baseline (IDW/Kriging). \Cref{fig:baseline_comparison} illustrates the magnitude of this gap visually.
 \end{itemize}
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/01_baseline_comparison}
+  \caption{Visual comparison of mean absolute error (mean $\pm$ std, 8-fold LOSO) across all evaluated methods.
+           Geostatistical methods (IDW, Kriging) match the physics baseline ($\sim$37~m) but cannot overcome
+           uncalibrated hardware offsets. Supervised regressors (RF, XGBoost) overfit sensor-specific patterns
+           and degrade to $>$64~m under zero-shot transfer. The proposed PINF achieves 3.55~m ($\mathbf{90.4\%}$
+           improvement), more than $10\times$ lower than the best conventional baseline.}
+  \label{fig:baseline_comparison}
+\end{figure*}
 
 \subsection{Altitude Measurement Performance}
 \label{subsec:main_results}
@@ -184,12 +195,42 @@ The ablation study decouples the two core innovations---the \textbf{pressure-dom
     \item \textbf{Setup B vs.\ Setup D (P$_{\text{bias}}$ + Curriculum vs.\ P$_{\text{bias}}$ alone)}: Adding the Altitude Curriculum to the bias-aware formulation reduces MAE from 9.27~m to 3.55~m---an additional \textbf{61.7\%} relative reduction. Curriculum learning \emph{only} delivers its full benefit when the prediction target is already physics-grounded: the curriculum stabilises the smooth pressure-correction manifold by preventing the SIREN from overfitting high-altitude non-linearities early in training.
 \end{itemize}
 
-\noindent The key finding is that P$_{\text{bias}}$ and Curriculum are \emph{complementary}: neither alone achieves the performance of their combination, and the order of operations matters. The cumulative effect yields a \textbf{90.4\% improvement} over the physics baseline.
-
+\noindent The key finding is that P$_\text{bias}$ and Curriculum are \emph{complementary}: neither alone achieves the performance of their combination, and the order of operations matters. The cumulative effect yields a \textbf{90.4\% improvement} over the physics baseline (\cref{fig:ablation_study}).
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figures/02_ablation_study}
+  \caption{Waterfall bar chart visualizing the progressive MAE reduction from the physics baseline through each
+           ablated configuration. The pressure-bias reformulation ($\delta P$, Setup~B) alone drives the dominant
+           58.3\% reduction (22.21~m $\to$ 9.27~m) by decoupling predictions from hardware-specific offsets.
+           Adding the 3-stage Altitude Curriculum (Setup~D) delivers an additional 61.7\% relative reduction
+           (9.27~m $\to$ 3.55~m), demonstrating the synergy between physics-grounded targets and
+           curriculum-regulated training.}
+  \label{fig:ablation_study}
+\end{figure*}
 \subsection{Uncertainty Quantification and Spatial Uncertainty Map}
 \label{subsec:uncertainty}
 
-To characterize both the spatial extent of the learned height field and the system's inference efficiency, we employ a \textbf{Deep Ensemble} of $N{=}5$ independently initialized models trained with different random seeds. Ensemble predictions on the full 134,627-sample dataset collectively span a per-sensor height range of 97--257~m, faithfully reproducing the physical altimetry across the deployment zone. MC Dropout was evaluated as an alternative uncertainty estimator but found to be degenerate in this context: the physics residual formulation constrains the output range so tightly that dropout produces near-zero variance ($\sigma \sim 2.7 \times 10^{-5}$~m), which carries no meaningful epistemic signal. The deep ensemble, by contrast, captures model-initialization diversity and produces a well-defined height field for spatial visualization.
+To characterize both the spatial extent of the learned height field and the system's inference efficiency, we employ a \textbf{Deep Ensemble} of $N{=}5$ independently initialized models trained with different random seeds. Ensemble predictions on the full 134,627-sample dataset collectively span a per-sensor height range of 97--257~m, faithfully reproducing the physical altimetry across the deployment zone. MC Dropout was evaluated as an alternative uncertainty estimator but found to be degenerate in this context: the physics residual formulation constrains the output range so tightly that dropout produces near-zero variance ($\sigma \sim 2.7 \times 10^{-5}$~m), which carries no meaningful epistemic signal (\cref{fig:uq_calibration}). The spatial distribution of per-sample prediction errors for the held-out fold is shown in \cref{fig:spatial_error}. The deep ensemble, by contrast, captures model-initialization diversity and produces a well-defined height field for spatial visualization.
+
+\begin{figure*}[htbp]
+  \centering
+  \subfloat[MC~Dropout uncertainty calibration (Fold~0). Each bar is the mean absolute error for samples in that
+            uncertainty quintile (Q1 = lowest $\sigma$, Q5 = highest $\sigma$). The near-uniform bar heights
+            confirm that MC~Dropout variance is uninformative---all 134,627 samples collapse to $\sigma \approx
+            2.7 \times 10^{-5}$~m, consistent with the tight physics-constrained output range.
+            \label{fig:uq_calibration}]{%
+    \includegraphics[width=0.52\linewidth]{figures/03_uncertainty_vs_error}}
+  \hfill
+  \subfloat[Spatial distribution of per-sample absolute prediction error for the held-out sensor
+            (Fold~0, sensor \texttt{\ldots A64197}). Colour encodes error magnitude (RdYlBu$_{\text{r}}$
+            palette; scale clipped at 95th percentile). The absence of systematic spatial clustering
+            demonstrates that residual errors reflect uncorrelated measurement noise rather than
+            topographic or meteorological bias.
+            \label{fig:spatial_error}]{%
+    \includegraphics[width=0.44\linewidth]{figures/04_spatial_uncertainty}}
+  \caption{Uncertainty characterisation and spatial error analysis for the PINF framework.}
+  \label{fig:uq_and_spatial}
+\end{figure*}
 
 Fig.~\ref{fig:uncertainty_map} presents the ensemble-predicted height field over the deployment zone. The model is applied to all 134,627 real observations (with actual pressure, temperature, and humidity for each sample), per-sensor ensemble mean heights are computed, and an IDW (Inverse Distance Weighting) surface is constructed over a $120 \times 120$ grid. The contour map reveals the genuine spatial variation across the 1~km$^2$ deployment zone: the model correctly identifies the rooftop sensor at 259~m (prediction error: 2.0~m) and the street-level cluster near 95--100~m (errors: 2.6--3.7~m), demonstrating that the learned height field is physically interpretable.
 
@@ -216,17 +257,20 @@ Fig.~\ref{fig:uncertainty_map} presents the ensemble-predicted height field over
 \toprule
 \textbf{Metric} & \textbf{Value} \\
 \midrule
-\textbf{Inference Latency} & \textbf{2.1 ms/query} \\
-\textbf{Throughput} & \textbf{$\sim$467 queries/second} \\
+GPU & NVIDIA L20 (45~GB GDDR6X) \\
+\midrule
+\textbf{Inference Latency} & \textbf{2.33 ms/query} \\
+\textbf{Throughput} & \textbf{429 queries/second} \\
 \textbf{Model Parameters} & 1,421,146 \\
 \textbf{Model Size (fp32)} & 5.42 MB \\
 \midrule
 Ensemble members ($N$) & 5 \\
+Ensemble latency ($5\times$) & $\approx$11.7 ms/query \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The single-model inference latency of 2.1~ms per query on an NVIDIA GPU (Table~\ref{tab:uncertainty}) demonstrates that the proposed framework is computationally efficient: ensemble inference requires only $5 \times 2.1 \approx 10$~ms total for a fully calibrated probabilistic height estimate, well within the real-time requirements of U-space traffic management systems.
+The single-model inference latency of 2.33~ms per query on an NVIDIA L20 GPU (Table~\ref{tab:uncertainty}) demonstrates that the proposed framework is computationally efficient: ensemble inference requires only $5 \times 2.33 \approx 11.7$~ms total for a fully calibrated probabilistic height estimate, well within the real-time requirements of U-space traffic management systems.
 
 \subsection{Comparison with State-of-the-Art}
 

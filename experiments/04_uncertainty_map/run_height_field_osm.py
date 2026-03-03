@@ -208,6 +208,7 @@ def plot_publication_map(sens, grid_lats, grid_lons, height_grid):
     cbar.set_label('Predicted Height (m)', fontsize=13, fontweight='bold',
                    labelpad=10)
     cbar.ax.tick_params(labelsize=11)
+    cbar.ax.set_zorder(1)   # keep colorbar behind annotation text boxes
 
     # sensor anchors — shadow + star
     ax.scatter(sens['lon'], sens['lat'], s=340, c='#555555',
@@ -217,14 +218,22 @@ def plot_publication_map(sens, grid_lats, grid_lons, height_grid):
                edgecolors='#7F0000', linewidths=0.7,
                label='GeoBox sensor node')
 
+    # Per-sensor annotation offsets: (dlon, dlat)
+    _offsets = {
+        '527426': ( 0.00040,  0.00090),  # north
+        '605977': ( -0.00150,  0.00000),  # east
+        '250224': ( 0.00040, -0.00090),  # south
+    }
+
     for _, row in sens.iterrows():
         lbl = (f"{row['label']}\n"
                f"GNSS: {row['alt_gnss']:.0f} m\n"
                f"Pred: {row['h_pred']:.0f} m")
+        dlon, dlat = _offsets.get(row['label'], (0.00040, 0.00040))
         ax.annotate(
             lbl,
             xy=(row['lon'], row['lat']),
-            xytext=(row['lon'] + 0.00040, row['lat'] + 0.00040),
+            xytext=(row['lon'] + dlon, row['lat'] + dlat),
             fontsize=8.5, fontweight='bold', color='#1A1A2E',
             bbox=dict(boxstyle='round,pad=0.35', fc='white',
                       ec='#AAAAAA', alpha=0.90, lw=0.8),
@@ -253,8 +262,8 @@ def plot_publication_map(sens, grid_lats, grid_lons, height_grid):
     ax.set_xlabel('Longitude (°E)', fontsize=13, fontweight='bold', labelpad=8)
     ax.set_ylabel('Latitude (°N)',  fontsize=13, fontweight='bold', labelpad=8)
     ax.set_title(
-        'Neural Height Field over GeoBox Deployment Zone\n'
-        r'(Shenzhen Urban Canyon $\cdot$ Deep Ensemble $N\!=\!5$ $\cdot$ LOSO MAE $=$ 3.55 m)',
+        'Neural Height Field over GeoBox Deployment Zone\n',
+        # r'(Shenzhen Urban Canyon $\cdot$ Deep Ensemble $N\!=\!5$ $\cdot$ LOSO MAE $=$ 3.55 m)',
         fontsize=13, fontweight='bold', pad=16
     )
     ax.legend(loc='lower right', fontsize=11, framealpha=0.92,
