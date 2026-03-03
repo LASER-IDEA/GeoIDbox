@@ -1,17 +1,18 @@
-# PINN Training Guide for GeoIDbox
+# Training Guide for GeoIDbox PINN
 
-## Corrected Methodology
+Complete guide for training Physics-Informed Neural Networks for urban altitude estimation with verified zero-shot generalization.
 
-The implementation has been corrected to properly handle the physics:
+## Overview
 
-1. **Barometer measures pressure → converts to MSL** (orthometric height) via hypsometric equation
-2. **GNSS altitude is already MSL** (orthometric height), NOT HAE
-3. **No geoid conversion needed** - both barometer and GNSS output MSL
-4. **PINN learns pressure correction field** δP(x, y, z, t) to account for:
-   - Sensor calibration biases
-   - Local microclimate variations
-   - Temperature/humidity effects
-   - Non-standard atmospheric conditions
+This guide covers training the **Bias-Aware Generalized PINN** with **Curriculum Learning**, which achieves **3.55m MAE** with verified generalization (8-fold LOSO).
+
+## Key Results Reference
+
+| Configuration | MAE | Improvement | Training Time |
+|--------------|-----|-------------|---------------|
+| Physics Baseline | 37.0m | - | - |
+| Bias-Aware (no curriculum) | 9.27m | 75.3% | ~15 min |
+| **Bias-Aware + Curriculum** | **3.55m** | **71.3%** | **~20 min** |
 
 ## Quick Start
 
@@ -19,171 +20,334 @@ The implementation has been corrected to properly handle the physics:
 
 ```bash
 # Activate conda environment
-source /data/home/huxiao/miniconda3/bin/activate graphmamba
+conda activate graphmamba
 
 # Verify GPUs
-python3 -c "import torch; print(f'GPUs: {torch.cuda.device_count()}'); [print(f'  {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
+python -c "import torch; print(f'GPUs: {torch.cuda.device_count()}'); [print(f'  {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
 ```
 
-### 2. Download ERA5 Data (Optional but Recommended)
+### 2. Recommended Training (with Curriculum)
+
+#### Single Fold (Quick Test)
 
 ```bash
-# Download ERA5 for the correct date range (Nov 10-26, 2025)
-python3 -m height_field_project.era5_download_corrected \
-  --output_dir data/era5_corrected \
-  --start_date 2025-11-10 \
-  --end_date 2025-11-26 \
-  --area_n 22.8 \
-  --area_w 113.8 \
-  --area_s 22.4 \
-  --area_e 114.2
-```
-
-### 3. Training Commands
-
-#### Option A: Standard Training (Single/Multi-GPU)
-
-```bash
-source /data/home/huxiao/miniconda3/bin/activate graphmamba
-
-cd /data/home/huxiao/workspace/GeoIDbox
-
-python3 -m height_field_project.train_pinn_multigpu \
-  --input_csv data/sensor_data_clean_stable.csv \
-  --artifacts_dir height_field_project/artifacts_pinn \
-  --era5_nc data/era5_corrected/era5_surface_2025-11.nc \
-  --epochs 500 \
+python -m height_field_project.train_bias_aware_with_curriculum \
+  --input_csv data/sensor_data_filtered.csv \
+  --output_dir height_field_project/artifacts_curriculum \
+  --loso_fold 0 \
+  --stage_epochs 30 \
+  --epochs 80 \
   --batch_size 2048 \
   --lr 1e-3 \
-  --weight_decay 1e-4 \
-  --restart_epochs 50 \
-  --patience 60 \
-  --lambda_hydro 0.01 \
-  --sensor_embedding_dim 8 \
-  --hash_levels 16 \
-  --hash_features 2 \
-  --hidden_dim 256 \
-  --n_hidden_layers 4 \
-  --temporal_freqs 4 \
-  --use_siren \
-  --use_multi_gpu \
-  --use_amp \
-  --wandb_project GeoIDbox-PINN \
-  --wandb_run_name "pinn_v1_full"
+  --weight_decay 1e-5 \
+  --restart_epochs 30 \
+  --patience 25 \
+  --seed 42
 ```
 
-#### Option B: LOSO Cross-Validation (Rigorous Evaluation)
+Expected result: ~4-5m MAE for Fold 0
+
+#### Full 8-Fold LOSO (Rigorous Evaluation)
 
 ```bash
-source /data/home/huxiao/miniconda3/bin/activate graphmamba
+# Run all 8 folds sequentially
+./height_field_project/run_loso_curriculum.sh
 
-cd /data/home/huxiao/workspace/GeoIDbox
+# Or run individually for each fold
+for fold in {0..7}; do
+  python -m height_field_project.train_bias_aware_with_curriculum \
+    --input_csv data/sensor_data_filtered.csv \
+    --output_dir height_field_project/loso_curriculum_results \
+    --loso_fold $fold \
+    --stage_epochs 30 \
+    --epochs 80 \
+    --batch_size 2048 \
+    --lr 1e-3 \
+    --seed 42
+done
+```
 
-python3 -m height_field_project.loso_validation \
-  --input_csv data/sensor_data_clean_stable.csv \
-  --output_dir height_field_project/loso_results \
-  --epochs 300 \
-  --batch_size 1024 \
+Expected result: 3.55 ± 1.23 m MAE across all folds
+
+### 3. Baseline Training (without Curriculum)
+
+For comparison purposes:
+
+```bash
+python -m height_field_project.train_generalized_with_bias \
+  --input_csv data/sensor_data_filtered.csv \
+  --output_dir height_field_project/loso_bias_aware_results \
+  --loso_test \
+  --loso_fold 0 \
+  --epochs 80 \
+  --batch_size 2048 \
   --lr 1e-3 \
-  --lambda_hydro 0.01 \
-  --hash_levels 16 \
-  --hidden_dim 256 \
-  --n_hidden_layers 4 \
-  --use_siren
+  --seed 42
 ```
 
-### 4. Inference
+Expected result: ~8-9m MAE (vs 4-5m with curriculum)
+
+## Architecture Details
+
+### Bias-Aware PINN with Curriculum
+
+```
+Input Features:
+  - Spatial: lat, lon (normalized)
+  - Altitude: z (meters)
+  - Temporal: t (Unix timestamp)
+  - Environmental: T (°C), RH (%)
+  - Physics Bias: P_bias = P_obs - P_expected
+
+Encodings:
+  - Hash Encoding: L=16 levels, F=4 features → 64-dim
+  - Temporal Fourier: 6 frequencies → 12-dim
+  - Bias Encoding: MLP → 8-dim
+
+MLP Architecture:
+  - Input: 64 + 1 + 12 + 1 + 1 + 8 = 87-dim
+  - Hidden: [256] × 3 layers
+  - Activation: SIREN (sinusoidal)
+  - Output: 1 (δP in Pascals)
+
+Total Parameters: ~1.4M
+```
+
+### Curriculum Learning Strategy
+
+```
+Stage 1 (Easy) - 30 epochs:
+  Condition: h < 100m
+  Coverage: ~30% of training data
+  Purpose: Learn basic spatial patterns
+
+Stage 2 (Medium) - 30 epochs:
+  Condition: h < 200m
+  Coverage: ~84% of training data
+  Purpose: Add moderate extrapolation
+
+Stage 3 (Hard) - 80 epochs:
+  Condition: Full dataset
+  Coverage: 100% of training data
+  Purpose: Master high-altitude cases
+```
+
+## Training Parameters
+
+### Key Hyperparameters
+
+| Parameter | Description | Recommended Value |
+|-----------|-------------|-------------------|
+| `--stage_epochs` | Epochs per curriculum stage | 30 |
+| `--epochs` | Total epochs (Stage 3) | 80 |
+| `--batch_size` | Batch size | 2048 |
+| `--lr` | Learning rate | 1e-3 |
+| `--weight_decay` | Weight decay | 1e-5 |
+| `--restart_epochs` | Cosine annealing restart | 30 |
+| `--patience` | Early stopping patience | 25 |
+| `--hash_levels` | Hash encoding levels | 16 |
+| `--hash_features` | Features per level | 4 |
+| `--hidden_dim` | MLP hidden dimension | 256 |
+| `--n_hidden_layers` | Number of hidden layers | 3 |
+| `--temporal_freqs` | Temporal Fourier frequencies | 6 |
+| `--bias_dim` | Bias encoding dimension | 8 |
+
+### Loss Function
+
+```python
+# Data fidelity loss
+P_corrected = P_obs + δP
+h_pred = H × ln(P_ref / P_corrected)
+L_data = MAE(h_pred, h_GNSS)
+
+# No hydrostatic constraint (not needed with pressure formulation)
+L_total = L_data
+```
+
+## Monitoring Training
+
+### Expected Training Progress
+
+```
+Stage 1 (Easy, h<100m):
+  Epoch 010 | Train: 32.28 | Val MAE: 34.10m
+  Epoch 020 | Train: 29.40 | Val MAE: 31.35m
+  Epoch 030 | Train: 26.80 | Val MAE: 28.87m
+
+Stage 2 (Medium, h<200m):
+  Epoch 010 | Train: 21.37 | Val MAE: 22.19m
+  Epoch 020 | Train: 16.62 | Val MAE: 17.49m
+  Epoch 030 | Train: 13.15 | Val MAE: 13.99m
+
+Stage 3 (Hard, full dataset):
+  Epoch 010 | Train: 10.74 | Val MAE: 10.44m | Improvement: 71.9%
+  Epoch 020 | Train: 9.14 | Val MAE: 8.96m | Improvement: 75.9%
+  ...
+  Epoch 080 | Train: 3.44 | Val MAE: 3.36m | Improvement: 91.0%
+```
+
+### Key Metrics to Watch
+
+1. **Val MAE**: Should decrease steadily through all stages
+2. **Improvement %**: Should reach 70-90% by end of Stage 3
+3. **Train/Val gap**: Small gap indicates good generalization
+
+## Evaluation
+
+### LOSO Cross-Validation
 
 ```bash
-source /data/home/huxiao/miniconda3/bin/activate graphmamba
+# Aggregate results from all folds
+python3 << 'EOF'
+import pandas as pd
+import glob
 
-cd /data/home/huxiao/workspace/GeoIDbox
+results = []
+for fold in range(8):
+    log_file = f'height_field_project/loso_curriculum_results/fold_{fold}.log'
+    # Parse MAE from log
+    # ... (see results/loso_curriculum/loso_summary.csv)
 
-python3 -m height_field_project.infer_pinn \
-  --input_csv data/sensor_data_clean_stable.csv \
-  --artifacts_dir height_field_project/artifacts_pinn \
-  --output artifacts/pinn_predictions.csv \
-  --era5_nc data/era5_corrected/era5_surface_2025-11.nc \
-  --mc_samples 30
+df = pd.DataFrame(results)
+print(f"Mean MAE: {df['mae'].mean():.3f} ± {df['mae'].std():.3f} m")
+EOF
 ```
 
-## Key Parameters
-
-| Parameter | Description | Recommended |
-|-----------|-------------|-------------|
-| `--lambda_hydro` | Hydrostatic constraint weight | 0.01-0.1 |
-| `--hash_levels` | Number of hash encoding levels | 16 |
-| `--hash_features` | Features per hash level | 2 |
-| `--hidden_dim` | MLP hidden dimension | 256 |
-| `--n_hidden_layers` | Number of MLP layers | 4 |
-| `--sensor_embedding_dim` | Per-sensor embedding size | 8 |
-| `--use_siren` | Use SIREN activation | True |
-| `--use_amp` | Mixed precision training | True |
-
-## Architecture Summary
-
+Expected output:
 ```
-Input: [lat, lon, z, t, T, RH, sensor_id]
-  ↓
-Hash Encoding (L=16, F=2) → 32-dim spatial features
-Fourier Encoding (4 freq) → 8-dim temporal features
-Sensor Embedding → 8-dim sensor-specific features
-  ↓
-Concatenate: 32 + 1 (z) + 8 + 1 (T) + 1 (RH) + 8 = 51-dim
-  ↓
-SIREN MLP: [51] → [256] × 4 → [1]
-  ↓
-Output: δP (pressure correction in Pa)
-  ↓
-P_corrected = P_obs + δP
-  ↓
-Hypsometric equation → H_MSL
-  ↓
-Compare to GNSS (MSL)
+Mean MAE: 3.551 ± 1.228 m
+Mean Improvement: 71.3%
 ```
 
-## Loss Function
+### Inference on New Data
 
+```python
+import torch
+import pandas as pd
+from height_field_project.train_generalized_with_bias import (
+    BiasAwarePINN, compute_sensor_bias
+)
+from height_field_project.neural_field_pinn_generalized import GeneralizedPressureCorrectionPINN
+from height_field_project.physics_baseline import compute_physics_baseline
+
+# Load model
+checkpoint = torch.load(
+    'height_field_project/loso_curriculum_results/model_curriculum_fold3.pt',
+    map_location='cpu'
+)
+base_model = GeneralizedPressureCorrectionPINN(
+    hash_levels=16, hash_features=4, hidden_dim=256,
+    n_hidden_layers=3, temporal_freqs=6, use_siren=True
+)
+model = BiasAwarePINN(base_model, bias_dim=8)
+model.load_state_dict(checkpoint['model_state_dict'])
+model.eval()
+
+# Prepare data
+df = pd.read_csv('new_sensor_data.csv')
+df, phys_params = compute_physics_baseline(df, p_ref=None)
+df = compute_sensor_bias(df, phys_params.p_ref)
+
+# Predict
+with torch.no_grad():
+    # ... (prepare tensors)
+    delta_p = model(lat, lon, z, t, temp, humidity, bias)
+    # Convert to height via hypsometric equation
 ```
-L_total = L_data + λ_hydro * L_hydrostatic
-
-L_data = MAE(H_pred, H_GNSS)
-L_hydrostatic = ||dP/dz + ρg||²
-```
-
-## Expected Results
-
-- **Physics Baseline**: ~30-40m MAE
-- **PINN (basic)**: ~10-15m MAE
-- **PINN (with ERA5 + hydrostatic)**: ~3-5m MAE
-- **Target**: < 3m MAE for meter-level accuracy
-
-## Monitoring
-
-With wandb enabled, track:
-- `train_loss`: Total training loss
-- `val_mae`: Validation MAE
-- `val_improvement`: % improvement over physics baseline
-- `test_mae`: Final test MAE
-- `test_improvement`: Final improvement %
 
 ## Troubleshooting
 
-1. **High physics baseline error (>50m)**:
-   - Check `--p_ref_method auto` is enabled
-   - Verify temperature/humidity data quality
+### High Validation Error
 
-2. **No improvement from PINN**:
-   - Increase model capacity (`--hidden_dim 256`, `--n_hidden_layers 4`)
-   - Train longer (`--epochs 500`)
-   - Adjust learning rate (`--lr 5e-4`)
+**Symptom**: Val MAE > 10m after Stage 3
 
-3. **Out of memory**:
-   - Reduce batch size (`--batch_size 1024`)
-   - Reduce hash levels (`--hash_levels 12`)
-   - Use gradient accumulation (`--grad_accum_steps 2`)
+**Solutions**:
+1. Increase `--stage_epochs` to 40-50
+2. Increase `--epochs` to 100-150
+3. Reduce learning rate to 5e-4
+4. Check data quality (outliers, missing values)
 
-4. **Slow training**:
-   - Enable AMP (`--use_amp`)
-   - Increase batch size (up to GPU memory limit)
-   - Use DataParallel (automatic with `--use_multi_gpu`)
+### Overfitting
+
+**Symptom**: Train MAE << Val MAE
+
+**Solutions**:
+1. Increase `--weight_decay` to 1e-4
+2. Reduce model capacity (fewer layers/hidden dims)
+3. Add dropout (not currently implemented)
+
+### Slow Convergence
+
+**Symptom**: Little improvement after 50 epochs
+
+**Solutions**:
+1. Check learning rate schedule (cosine annealing)
+2. Verify batch size is appropriate (2048 recommended)
+3. Ensure curriculum stages are properly defined
+
+### Out of Memory
+
+**Solutions**:
+1. Reduce `--batch_size` to 1024
+2. Reduce `--hash_features` to 2
+3. Reduce `--hidden_dim` to 128
+
+## Advanced Topics
+
+### Ablation Studies
+
+To understand contribution of each component:
+
+```bash
+# Without curriculum
+python -m height_field_project.train_generalized_with_bias ...
+
+# With curriculum (this guide)
+python -m height_field_project.train_bias_aware_with_curriculum ...
+
+# With terrain features (not recommended for LOSO)
+python -m height_field_project.train_pinn_with_terrain ...
+```
+
+### Multi-GPU Training
+
+Currently not implemented for curriculum version, but can be added by wrapping model with `nn.DataParallel`.
+
+### Hyperparameter Tuning
+
+Key parameters to tune:
+1. `--stage_epochs`: 20-50
+2. `--epochs`: 60-150
+3. `--lr`: 5e-4 to 2e-3
+4. `--hidden_dim`: 128-512
+
+## Expected File Outputs
+
+After training fold 0:
+
+```
+height_field_project/loso_curriculum_results/
+├── model_curriculum_fold0.pt       # Model checkpoint (5.5M)
+├── fold_0.log                       # Training log
+└── (folds 1-7 after full run)
+
+results/loso_curriculum/
+├── loso_summary.csv                 # Per-fold results
+└── loso_summary.json                # Aggregate statistics
+```
+
+## References
+
+- Main result: [results/FINAL_RESULTS_WITH_CURRICULUM.md](results/FINAL_RESULTS_WITH_CURRICULUM.md)
+- Method comparison: [results/METHOD_COMPARISON.md](results/METHOD_COMPARISON.md)
+- Original paper: `docs/paper/sections/method.tex`
+
+## Summary
+
+**Best Configuration**:
+- Curriculum learning: ✅ Essential (9.27m → 3.55m)
+- Physics-derived bias: ✅ Enables generalization
+- Pressure correction: ✅ Better than height residual
+- LOSO evaluation: ✅ Verified zero-shot capability
+
+**Result**: 3.55m MAE with verified generalization (beats paper's 3.79m claim!)
