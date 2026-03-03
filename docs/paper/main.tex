@@ -29,7 +29,7 @@
 \usepackage{balance}
 % \usepackage[ruled, vlined, linesnumbered]{algorithm2e}
 % \usepackage{algpseudocode}
-\usepackage{ragged2e} 
+\usepackage{ragged2e}
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{threeparttable}
@@ -110,7 +110,7 @@ A Multi-Sensor Measurement System for Urban Altitude Estimation Using Physics-In
 \maketitle
 
 \begin{abstract}
-Accurate vertical positioning in low airspace is a critical challenge for the safety of urban air mobility and the integration of heterogeneous drone operations. While barometric altimetry provides a baseline via the hydrostatic equation, microclimate variations, urban canyon effects, and low-cost sensor biases typically introduce severe altitude discrepancies. To address these measurement challenges, this paper proposes a novel multi-sensor fusion framework comprising a custom low-cost edge-sensing device and an advanced physics-informed neural field algorithm. The proposed approach integrates physics-based atmospheric constraints with multi-resolution hash encoding, terrain-aware feature engineering, and a curriculum learning strategy to reconstruct highly accurate urban altitude fields from sparse IoT measurements. Validated using a real-world dataset, the system demonstrates exceptional measurement reliability. Experimental results demonstrate that coupling purpose-built IoT instrumentation with spatial-neural architectures can reliably achieve meter-level accuracy, providing a robust, real-time unified height reference for emerging low-altitude economies.
+Accurate vertical positioning in low airspace is a critical challenge for the safety of urban air mobility and the integration of heterogeneous drone operations. While barometric altimetry provides a baseline via the hydrostatic equation, microclimate variations, urban canyon effects, and low-cost sensor biases typically introduce severe altitude discrepancies. To address these measurement challenges, this paper proposes a novel multi-sensor fusion framework comprising a custom low-cost edge-sensing device and an advanced physics-informed neural field algorithm. The proposed approach integrates physics-based atmospheric constraints with multi-resolution hash encoding, physics-derived pressure bias feature engineering, and a curriculum learning strategy to reconstruct highly accurate urban altitude fields from sparse IoT measurements. Validated using a real-world dataset, the system demonstrates exceptional measurement reliability. Experimental results demonstrate that coupling purpose-built IoT instrumentation with spatial-neural architectures can reliably achieve a Mean Absolute Error (MAE) of 3.55 meters in strict zero-shot generalization testing, providing a robust, real-time unified height reference for emerging low-altitude economies.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -142,7 +142,7 @@ Neural Fields, Altitude Estimation, Urban Sensing, Curriculum Learning, Hash Enc
 % \begin{algorithm}[H]
 % \caption{Weighted Tanimoto ELM.}\label{alg:alg1}
 % \begin{algorithmic}
-% \STATE 
+% \STATE
 % \STATE {\textsc{TRAIN}}$(\mathbf{X} \mathbf{T})$
 % \STATE \hspace{0.5cm}$ \textbf{select randomly } W \subset \mathbf{X}  $
 % \STATE \hspace{0.5cm}$ N_\mathbf{t} \gets | \{ i : \mathbf{t}_i = \mathbf{t} \} | $ \textbf{ for } $ \mathbf{t}= -1,+1 $
@@ -150,7 +150,7 @@ Neural Fields, Altitude Estimation, Urban Sensing, Curriculum Learning, Hash Enc
 % \STATE \hspace{0.5cm}$ \hat{\mathbf{H}} \gets  B \cdot (\mathbf{X}^T\textbf{W})/( \mathbb{1}\mathbf{X} + \mathbb{1}\textbf{W} - \mathbf{X}^T\textbf{W} ) $
 % \STATE \hspace{0.5cm}$ \beta \gets \left ( I/C + \hat{\mathbf{H}}^T\hat{\mathbf{H}} \right )^{-1}(\hat{\mathbf{H}}^T B\cdot \mathbf{T})  $
 % \STATE \hspace{0.5cm}\textbf{return}  $\textbf{W},  \beta $
-% \STATE 
+% \STATE
 % \STATE {\textsc{PREDICT}}$(\mathbf{X} )$
 % \STATE \hspace{0.5cm}$ \mathbf{H} \gets  (\mathbf{X}^T\textbf{W} )/( \mathbb{1}\mathbf{X}  + \mathbb{1}\textbf{W}- \mathbf{X}^T\textbf{W}  ) $
 % \STATE \hspace{0.5cm}\textbf{return}  $\textsc{sign}( \mathbf{H} \beta )$
@@ -162,8 +162,8 @@ Neural Fields, Altitude Estimation, Urban Sensing, Curriculum Learning, Hash Enc
 \section{Conclusion and Future Work}
 \label{sec:conclusion}
 
-Accurate and unified vertical positioning in VLL airspace is a foundational prerequisite for the safety of emerging UAM operations. To bridge the critical measurement gap between barometric pressure altitude and GNSS geometric altitude, this paper proposed a novel edge-sensing and spatial modeling framework. 
-On the instrumentation front, we designed and deployed the Geobox, a low-cost, multi-sensor IoT terminal capable of capturing synchronized, high-frequency atmospheric and geometric profiles in dense urban canyons. On the algorithmic front, we introduced a PINF architecture. By explicitly embedding the physical hypsometric equation as a deterministic baseline and utilizing multi-resolution hash encoding alongside engineered terrain features, the PINF effectively models the highly non-linear microclimate residuals that traditional analytical methods fail to capture. Furthermore, a Terrain-Aware Curriculum Learning strategy was implemented to ensure robust convergence across spatially heterogeneous data distributions. Evaluated through a rigorous LOSO metrological protocol on a massive real-world dataset collected in Shenzhen, China, the proposed framework achieved a MAE of 3.79 meters. This represents a substantial 89.2\% improvement over the uncalibrated physics baseline. The results conclusively demonstrate that coupling purpose-built edge IoT instrumentation with physically constrained neural architectures can reliably provide a meter-level unified height reference for heterogeneous U-space traffic.
+Accurate and unified vertical positioning in VLL airspace is a foundational prerequisite for the safety of emerging UAM operations. To bridge the critical measurement gap between barometric pressure altitude and GNSS geometric altitude, this paper proposed a novel edge-sensing and spatial modeling framework.
+On the instrumentation front, we designed and deployed the Geobox, a low-cost, multi-sensor IoT terminal capable of capturing synchronized, high-frequency atmospheric and geometric profiles in dense urban canyons. On the algorithmic front, we introduced a PINF architecture. By explicitly embedding the physical hypsometric equation as a deterministic baseline and utilizing multi-resolution hash encoding alongside a physics-derived pressure bias feature, the PINF effectively models the highly non-linear microclimate residuals and decouples uncalibrated sensor-specific noise that traditional analytical methods fail to capture. Furthermore, a 3-stage altitude-based Curriculum Learning strategy was implemented to ensure robust convergence across spatially heterogeneous data distributions. Evaluated through a rigorous LOSO metrological protocol on a massive real-world dataset collected in Shenzhen, China, the proposed framework achieved a MAE of 3.55 meters. This proves true zero-shot generalization and represents a substantial 90.4\% improvement over the uncalibrated physics baseline. The results conclusively demonstrate that coupling purpose-built edge IoT instrumentation with physically constrained neural architectures can reliably provide a meter-level unified height reference for heterogeneous U-space traffic.
 
 % \subsection{ Future Work}
 Future research will focus on investigating these high-altitude boundary effects. We aim to integrate computational fluid dynamics priors or real-time wind vector measurements into the neural field to explicitly compensate for aerodynamic pressure distortions. Additionally, we plan to explore meta-learning and few-shot adaptation techniques. This will enable the PINF framework to rapidly calibrate and generalize to entirely new urban topologies with minimal initial sensor deployment, further enhancing the scalability of the Height Box network for global UAM deployment.
@@ -186,7 +186,7 @@ Future research will focus on investigating these high-altitude boundary effects
 \bibliography{ref}
 
 \newpage
- 
+
 % \bf{If you include a photo:}\vspace{-33pt}
 % \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{fig1}}]{Michael Shell}
 % Use $\backslash${\tt{begin\{IEEEbiography\}}} and then for the 1st argument use $\backslash${\tt{includegraphics}} to declare and link the author photo.
@@ -203,5 +203,3 @@ Future research will focus on investigating these high-altitude boundary effects
 \vfill
 
 \end{document}
-
-

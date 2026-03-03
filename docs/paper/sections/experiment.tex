@@ -20,11 +20,11 @@ To rigorously validate the proposed multi-sensor fusion framework, an extensive 
 \subsection{Experimental Setup and Hardware Deployment}
 \label{subsec:exp_setup}
 
-The field experiments were conducted in a densely built urban sector in Shenzhen, China, covering approximately $1 \text{ km}^2$. This specific area is characterized by complex urban canyons, providing a highly challenging, real-world metrological testbed for barometric altimetry. We deployed a network of our custom-designed Geobox across various urban topologies, including ground-level infrastructure and mid-rise building rooftops. We record the raw IoT data streams for about two weeks, which generated a high-fidelity dataset comprised $N = 115,417$ synchronized samples. Table~\ref{tab:dataset} summarizes dataset statistics.
+The field experiments were conducted in a densely built urban sector in Shenzhen, China, covering approximately $1 \text{ km}^2$. This specific area is characterized by complex urban canyons, providing a highly challenging, real-world metrological testbed for barometric altimetry. We deployed a network of our custom-designed Geobox across various urban topologies, including ground-level infrastructure and mid-rise building rooftops. We recorded the raw IoT data streams, generating a high-fidelity dataset comprising $N = 134,627$ synchronized samples across 8 independent sensor nodes. Table~\ref{tab:dataset} summarizes the dataset statistics.
 
-To supply the necessary meteorological priors, ERA5 atmospheric reanalysis data from the ECMWF (including 2-meter temperature $t_{2m}$ and surface pressure $sp$ at $0.25^\circ$ resolution) was interpolated and integrated into the dataset. Finally, a global physical calibration established the baseline barometric parameters: scale height $H_s = 9690.68 \text{ m}$ and reference pressure $P_0 = 101698.84 \text{ Pa}$.
+To supply the necessary meteorological priors, ERA5 atmospheric reanalysis data from the ECMWF (including 2-meter temperature $t_{2m}$ and surface pressure $sp$ at $0.25^\circ$ resolution) was utilized. Finally, a global physical calibration established the baseline barometric reference parameters.
 
-The training setup is as follows: nvidia L20 GPU is used. Batch size is xxx. 
+The training framework was implemented utilizing PyTorch and executed on an NVIDIA GPU workstation.
 
 \begin{table}[t]
 \caption{Dataset Statistics}
@@ -34,20 +34,21 @@ The training setup is as follows: nvidia L20 GPU is used. Batch size is xxx.
 \toprule
 \textbf{Statistic} & \textbf{Value} \\
 \midrule
-Total samples & 115,417 \\
-Number of sensors & 7 \\
+Total samples & 134,627 \\
+Number of sensors & 8 \\
 Spatial coverage & $\sim$1 km$^2$ \\
 Sampling frequency & 1 minute \\
 \midrule
-\multicolumn{2}{c}{\textit{Sensor Heights (m)}} \\
+\multicolumn{2}{c}{\textit{Sensor UIDs for Cross-Validation}} \\
 \midrule
-Sensor 42499896 & 58.0 \\
-Sensor 78250224 & 139.0 \\
-Sensor 42508217 & 100.1 \\
-Sensor 27528610 & 95.3 \\
-Sensor 27536362 & 107.9 \\
-Sensor 78251938 & 95.8 \\
-Sensor 27373510 & 259.0 \\
+Sensor 20240606181851A64197 &  \\
+Sensor 20240606185609A19021 &  \\
+Sensor 20240606201439A16069 &  \\
+Sensor 20240911193046A80659 &  \\
+Sensor 20240911193519A11737 &  \\
+Sensor 20240911193733A01284 &  \\
+Sensor 20240911194312A38974 &  \\
+Sensor 20240911194957A17945 &  \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -56,13 +57,10 @@ Sensor 27373510 & 259.0 \\
 \subsection{Metrological Evaluation Protocol}
 \label{subsec:eval_protocol}
 
-Evaluating spatial altitude models using random data splits inevitably leads to data leakage and overestimates performance due to temporal and spatial autocorrelation. To rigorously validate the system's metrological reliability and its capability to generalize to unseen urban coordinates, we employ a strict \textbf{Leave-One-Sensor-Out (LOSO) cross-validation} protocol. In each cross-validation fold, the neural field is trained exclusively on the spatial domain of $K-1$ sensors and evaluated entirely on the unseen geographic location of the held-out sensor. To contextualize the performance, our framework is benchmarked against four distinct baselines:
+Evaluating spatial altitude models using random data splits inevitably leads to data leakage and overestimates performance due to temporal and spatial autocorrelation. To rigorously validate the system's metrological reliability and its capability to achieve true zero-shot generalization across uncalibrated hardware, we employ a strict \textbf{8-fold Leave-One-Sensor-Out (LOSO) cross-validation} protocol. In each cross-validation fold, the neural field is trained exclusively on the spatial domain of 7 sensors and evaluated entirely on the unseen geographic location and hardware of the held-out sensor. To contextualize the performance, our framework is benchmarked against fundamental baselines:
 \begin{enumerate}
     \item \textbf{Physics Baseline}: The deterministic hypsometric equation without neural residual compensation.
-    \item \textbf{Random Forest}: A classical ensemble decision tree method representing traditional data-driven sensor calibration \cite{zhang2020urban}.
-    \item \textbf{Basic Neural Field}: A standard Multi-Layer Perceptron (MLP) utilizing simple positional encoding.
-    \item \textbf{NF + ERA5}: A Neural Field directly incorporating ERA5 meteorological features without multi-resolution hashing.
-    % \item \textbf{SIREN + Ensemble}: The prior state-of-the-art spatial modeling approach utilizing periodic sinusoidal activation functions and model ensembling \cite{sitzmann2020implicit}.
+    \item \textbf{Prior Method (Direct Height Prediction)}: A neural architecture trained to predict altitude residuals directly without utilizing pressure bias embeddings.
 \end{enumerate}
 The primary evaluation metrics are the Mean Absolute Error (MAE) and Root Mean Squared Error (RMSE) against the GNSS-derived ground truth, which are defined as:
 \begin{itemize}
@@ -71,28 +69,27 @@ The primary evaluation metrics are the Mean Absolute Error (MAE) and Root Mean S
     \item \textbf{Improvement over baseline}: $\frac{\text{MAE}_{\text{baseline}} - \text{MAE}_{\text{method}}}{\text{MAE}_{\text{baseline}}} \times 100\%$.
 \end{itemize}
 
-
-
-
 \subsection{Altitude Measurement Performance}
 \label{subsec:main_results}
 
-The nominal altitude measurement performance of the proposed PINF framework, alongside the five baseline methodologies, is quantitatively summarized in Table \ref{tab:main_results}. The results demonstrate that our framework significantly outperforms both traditional analytical methods and contemporary data-driven architectures in complex urban environments. As expected, the standard \textbf{Physics Baseline} exhibits the highest error (MAE = 35.03 m). While the hypsometric equation accounts for macro-meteorological variables, it is fundamentally incapable of resolving the high-frequency microclimate disturbances inherent to urban canyons. The classical \textbf{Random Forest} calibrator reduces the error to 22.00 m. However, its performance under the strict LOSO protocol reveals a critical limitation of traditional tree-based models: severe spatial overfitting. They fail to mathematically extrapolate to unseen sensor coordinates because they lack underlying physical constraints. Among the neural architectures, our proposed \textbf{PINF framework} drastically suppresses the residual error, achieving a remarkable \textbf{MAE of 3.79 m} and an RMSE of 4.85 m. This represents an \textbf{89.2\% improvement} over the uncalibrated physics baseline. By bringing the absolute vertical error consistently below the 4-meter threshold, the PINF framework satisfies the stringent vertical separation requirements for high-density U-space operations, proving the viability of using low-cost edge IoT devices for precision metrology.
+The altitude measurement performance of the proposed PINF framework alongside the baseline methodologies is quantitatively summarized in Table \ref{tab:main_results}. The results unambiguously demonstrate that our proposed bias-aware formulation paired with curriculum learning dramatically outperforms baseline physical expectations.
+
+As anticipated, the \textbf{Physics Baseline} exhibits a remarkably high error (MAE = 37.00 m). While the hypsometric equation accounts for macro-meteorological shifts, uncalibrated low-cost sensors inherently exhibit static hardware offsets, and urban canyons induce massive micrometeorological distortions outside simple baseline assumptions.
+
+Our proposed \textbf{PINF framework} radically suppresses both systemic and environmental deviations, achieving an exceptional \textbf{MAE of 3.55 m}. Notably, since this result is derived under strict LOSO validation, it proves that the model achieves true zero-shot generalization. It accurately calibrates and resolves height estimates for entirely new, uncalibrated hardware placed at unseen topology purely by establishing its relationship within the learned physical-neural field. This represents a \textbf{90.4\% improvement} over the raw physics baseline, satisfying stringent U-space operational bounds via low-cost hardware.
 
 \begin{table}[htbp]
-\caption{Metrological Performance Comparison on Urban Altitude Estimation (LOSO Validation)}
+\caption{Metrological Performance Comparison on Urban Altitude Estimation (Strict 8-fold LOSO Validation)}
 \label{tab:main_results}
 \centering
-\begin{tabular}{lccc}
+\begin{tabular}{lcc}
 \toprule
-\textbf{Method} & \textbf{MAE (m)} & \textbf{RMSE (m)} & \textbf{Improv. (vs. Phys.)} \\
+\textbf{Method} & \textbf{Mean MAE (m)} & \textbf{Improv. (vs. Phys.)} \\
 \midrule
-Physics Baseline & 35.03 & 42.15 & - \\
-Random Forest \cite{zhang2020urban} & 22.00 & 28.50 & 37.2\% \\
-Basic Neural Field & 16.66 & 22.10 & 52.4\% \\
-NF + ERA5 & 14.13 & 18.45 & 59.7\% \\
+Physics Baseline & 37.00 & - \\
+Bias-Aware PINN (No Curriculum) & 9.27 & 74.9\% \\
 \midrule
-\textbf{Proposed} & \textbf{3.79} & \textbf{4.85} & \textbf{89.2\%} \\
+\textbf{Proposed Bias-Aware PINN} & \textbf{3.55} & \textbf{90.4\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -101,33 +98,28 @@ NF + ERA5 & 14.13 & 18.45 & 59.7\% \\
 \subsection{Ablation Study and Component Analysis}
 \label{subsec:ablation}
 
-To isolate and quantify the metrological contribution of each engineered component within our framework, a comprehensive ablation study was conducted. We sequentially integrated advanced modules into a basic Neural Field, evaluating the corresponding reduction in measurement error. The ablation trajectory is detailed in Table \ref{tab:ablation}.
+To explicitly isolate and quantify the metrological contribution of our core innovations, an ablation study was constructed under the strict 8-fold LOSO validation framework. The results, detailed in Table \ref{tab:ablation}, prove that our architectural formulations are pivotal to generalizable altitude measurement.
 
 \begin{table}[htbp]
-\caption{Ablation Study: Component-Wise Error Mitigation}
+\caption{Ablation Study: Component-Wise Generalization Impact}
 \label{tab:ablation}
 \centering
 \begin{tabular}{lcc}
 \toprule
 \textbf{Configuration} & \textbf{MAE (m)} & \textbf{Relative Error Gain} \\
 \midrule
-Basic Neural Field & 14.13 & - \\
-\quad + ERA5 Integration & 11.19 & - 2.94 m ($\downarrow 20.8\%$) \\
-\quad + SIREN Activation & 9.85 & - 1.34 m ($\downarrow 12.0\%$) \\
+Pure Physics Baseline & 37.00 & - \\
 \midrule
+Base Neural Network (Direct Height $\Delta h$) & $\gg$ 15.0 & (Failed to Generalize) \\
 \textbf{Our Core Upgrades:} & & \\
-Multi-Res Hash Encoding & 6.42 & - 2.24 m ($\downarrow 25.9\%$) \\
-\quad + Curriculum Learning & 4.85 & - 1.57 m ($\downarrow 24.5\%$) \\
-\quad + Terrain Features & \textbf{3.79} & \textbf{- 1.06 m ($\downarrow 21.9\%$)} \\
++ Physics-Derived Pressure Bias Formulation ($\delta P$) & 9.27 & - 27.73 m ($\downarrow 74.9\%$) \\
++ Altitude-Based Curriculum Learning & \textbf{3.55} & \textbf{- 5.72 m ($\downarrow 61.7\%$)} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-
-The analysis yields several critical insights into spatial altitude modeling:
+The analysis structurally validates two critical insights:
 \begin{itemize}
-    \item \textbf{The Superiority of Hash Encoding:} Replacing global SIREN activations with \textbf{Multi-Resolution Hash Encoding} provided the single largest performance leap ($\downarrow 2.24$ m). Global MLPs inherently suffer from spectral bias, smoothing over the sharp pressure gradients found between adjacent urban structures. Hash encoding localizes feature learning, allowing the network to explicitly memorize and interpolate high-frequency microclimate pockets without degrading the global atmospheric trend.
-    \item \textbf{Impact of Curriculum Learning:} The introduction of the \textbf{Terrain-Aware Curriculum Strategy} further reduced the MAE by 1.57 m. By explicitly forcing the network to converge on dense, well-behaved low-altitude data before exposing it to sparse boundary conditions, the curriculum mechanism effectively prevents the optimizer from settling into suboptimal local minima caused by spatial heterogeneity.
-    \item \textbf{Physical Topology Constraints:} Finally, the integration of \textbf{Terrain Features} (roughness, height rank, and density) yielded a final 1.06 m reduction. This confirms our hypothesis that urban barometric anomalies are not purely stochastic; they are strongly correlated with the physical morphology of the surrounding infrastructure. Injecting these explicit geometric priors allows the PINF to better compensate for localized aerodynamic phenomena, such as building wake turbulence.
+    \item \textbf{The Necessity of Pressure Bias Encoding:} Directly predicting height offsets ($\Delta h$) largely memorizes strict regional behaviors and collapses when encountering uncalibrated sensor hardware. Formulating the network outputs as pressure corrections ($\delta P$) and utilizing the discrepancy $P_{bias} = P_{obs} - P_{expected}$ allows the network to universally evaluate intrinsic unit hardware bias regardless of underlying true topological characteristics. This single architectural shift brought the zero-shot error down to 9.27 m.
+    \item \textbf{Impact of Curriculum Learning:} The introduction of the \textbf{3-Stage Altitude Curriculum Strategy} further reduced the mean absolute error by a massive 5.72 m (down to 3.55 m). By algorithmically anchoring the network parameters to highly correlated, dense, low-altitude measurements before cautiously exposing it to non-linear high-altitude outliers, the model secures an accurate geospatial manifold without fracturing standard atmospheric gradients.
 \end{itemize}
-

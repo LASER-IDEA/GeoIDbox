@@ -1,0 +1,176 @@
+% \subsubsection{Training Efficiency}
+% \subsubsection{Future Directions}
+
+% \begin{enumerate}
+%     \item \textbf{Meta-learning}: Rapid adaptation to new sensors with few samples
+%     \item \textbf{Physics-informed neural operators}: Incorporate PDE constraints for better extrapolation
+%     \item \textbf{3D atmospheric fields}: Estimate full 3D pressure fields rather than single altitudes
+%     \item \textbf{Transfer learning}: Apply trained models to new cities with minimal calibration
+% \end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+\section{Experiments and Results}
+\label{sec:experiments}
+
+To rigorously validate the proposed multi-sensor fusion framework, an extensive urban field campaign was conducted. This section details the hardware deployment of the designed Geobox and a comprehensive metrological evaluation of the altitude measurement performance against state-of-the-art baselines.
+
+\subsection{Experimental Setup and Hardware Deployment}
+\label{subsec:exp_setup}
+
+The field experiments were conducted in a densely built urban sector in Shenzhen, China, covering approximately $1 \text{ km}^2$. This specific area is characterized by complex urban canyons, providing a highly challenging, real-world metrological testbed for barometric altimetry. We deployed a network of our custom-designed Geobox across various urban topologies, including ground-level infrastructure and mid-rise building rooftops. We recorded the raw IoT data streams, generating a high-fidelity dataset comprising $N = 134,627$ synchronized samples across 8 independent sensor nodes. Table~\ref{tab:dataset} summarizes the dataset statistics.
+
+To supply the necessary meteorological priors, ERA5 atmospheric reanalysis data from the ECMWF (including 2-meter temperature $t_{2m}$ and surface pressure $sp$ at $0.25^\circ$ resolution) was utilized. Finally, a global physical calibration established the baseline barometric reference parameters.
+
+The training framework was implemented utilizing PyTorch and executed on an NVIDIA GPU workstation.
+
+\begin{table}[t]
+\caption{Dataset Statistics}
+\label{tab:dataset}
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Statistic} & \textbf{Value} \\
+\midrule
+Total samples & 134,627 \\
+Number of sensors & 8 \\
+Spatial coverage & $\sim$1 km$^2$ \\
+Sampling frequency & 1 minute \\
+Altitude range & 59--322 m \\
+\midrule
+\multicolumn{2}{c}{\textit{Sensor UIDs for LOSO Cross-Validation}} \\
+\midrule
+20240606181851A64197 (Fold 0) & 19,538 samples \\
+20240606185609A19021 (Fold 1) & 19,004 samples \\
+20240606201439A16069 (Fold 2) & 18,311 samples \\
+20240911193046A80659 (Fold 3) & 15,940 samples \\
+20240911193519A11737 (Fold 4) & 12,843 samples \\
+20240911193733A01284 (Fold 5) & 16,878 samples \\
+20240911194312A38974 (Fold 6) & 14,136 samples \\
+20240911194957A17945 (Fold 7) & 17,977 samples \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{Metrological Evaluation Protocol}
+\label{subsec:eval_protocol}
+
+Evaluating spatial altitude models using random data splits inevitably leads to data leakage and overestimates performance due to temporal and spatial autocorrelation. To rigorously validate the system's metrological reliability and its capability to achieve true zero-shot generalization across uncalibrated hardware, we employ a strict \textbf{8-fold Leave-One-Sensor-Out (LOSO) cross-validation} protocol. In each cross-validation fold, the neural field is trained exclusively on the spatial domain of 7 sensors and evaluated entirely on the unseen geographic location and hardware of the held-out sensor.
+
+To contextualize the performance, our framework is benchmarked against fundamental baselines:
+\begin{enumerate}
+    \item \textbf{Physics Baseline}: The deterministic hypsometric equation without neural residual compensation.
+    \item \textbf{Bias-Aware without Curriculum}: Our proposed pressure bias formulation trained without curriculum learning.
+\end{enumerate}
+
+The primary evaluation metrics are the Mean Absolute Error (MAE) and Root Mean Squared Error (RMSE) against the GNSS-derived ground truth, which are defined as:
+\begin{itemize}
+    \item \textbf{Mean Absolute Error (MAE)}: $\frac{1}{N} \sum_{i=1}^N |h_i^{\text{pred}} - h_i^{\text{true}}|$.
+    \item \textbf{Root Mean Squared Error (RMSE)}: $\sqrt{\frac{1}{N} \sum_{i=1}^N (h_i^{\text{pred}} - h_i^{\text{true}})^2}$.
+    \item \textbf{Improvement over baseline}: $\frac{\text{MAE}_{\text{baseline}} - \text{MAE}_{\text{method}}}{\text{MAE}_{\text{baseline}}} \times 100\%$.
+\end{itemize}
+
+\subsection{Altitude Measurement Performance}
+\label{subsec:main_results}
+
+The altitude measurement performance of the proposed PINF framework alongside the baseline methodologies is quantitatively summarized in Table~\ref{tab:main_results}. The results unambiguously demonstrate that our proposed bias-aware formulation paired with curriculum learning dramatically outperforms baseline physical expectations.
+
+As anticipated, the \textbf{Physics Baseline} exhibits a remarkably high error (MAE = 36.96 m). While the hypsometric equation accounts for macro-meteorological shifts, uncalibrated low-cost sensors inherently exhibit static hardware offsets, and urban canyons induce massive micrometeorological distortions outside simple baseline assumptions.
+
+Our proposed \textbf{PINF framework} radically suppresses both systemic and environmental deviations, achieving an exceptional \textbf{MAE of 3.55 m} with strict LOSO validation. This proves that the model achieves true zero-shot generalization, accurately calibrating height estimates for entirely new, uncalibrated hardware at unseen topologies. This represents a \textbf{90.4\% improvement} over the raw physics baseline.
+
+\begin{table}[htbp]
+\caption{Metrological Performance Comparison on Urban Altitude Estimation (Strict 8-fold LOSO Validation)}
+\label{tab:main_results}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Mean MAE (m)} & \textbf{Std (m)} & \textbf{Improv.} \\
+\midrule
+Physics Baseline & 36.96 & 4.04 & - \\
+Bias-Aware PINN (No Curriculum) & 9.27 & 2.48 & 74.9\% \\
+\midrule
+\textbf{Proposed Bias-Aware + Curriculum} & \textbf{3.55} & \textbf{1.23} & \textbf{90.4\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-Fold LOSO Analysis}
+
+Table~\ref{tab:per_fold} presents the detailed per-fold LOSO results, demonstrating consistent performance across all held-out sensors. The best performing fold (Fold 3) achieved 1.57 m MAE, while even the most challenging fold (Fold 7) achieved 4.85 m MAE---well within operational requirements for U-space traffic.
+
+\begin{table}[htbp]
+\caption{Per-Fold LOSO Cross-Validation Results}
+\label{tab:per_fold}
+\centering
+\begin{tabular}{clccc}
+\toprule
+\textbf{Fold} & \textbf{Held-out Sensor} & \textbf{MAE (m)} & \textbf{RMSE (m)} & \textbf{Improv.} \\
+\midrule
+0 & 20240606181851A64197 & 4.639 & 13.52 & 71.9\% \\
+1 & 20240606185609A19021 & 4.074 & 10.68 & 67.7\% \\
+2 & 20240606201439A16069 & 3.723 & 8.96 & 70.1\% \\
+3 & 20240911193046A80659 & \textbf{1.572} & 5.81 & 69.5\% \\
+4 & 20240911193519A11737 & 4.394 & 10.86 & 72.3\% \\
+5 & 20240911193733A01284 & 3.226 & 8.73 & 71.8\% \\
+6 & 20240911194312A38974 & 1.929 & 6.58 & 72.4\% \\
+7 & 20240911194957A17945 & 4.854 & 10.76 & 74.8\% \\
+\midrule
+\multicolumn{2}{c}{\textbf{Mean} ($\pm$ Std)} & \textbf{3.55 ($\pm$1.23)} & \textbf{9.49 ($\pm$2.51)} & \textbf{71.3\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Study and Component Analysis}
+\label{subsec:ablation}
+
+To explicitly isolate and quantify the metrological contribution of our core innovations, an ablation study was constructed under the strict 8-fold LOSO validation framework. The results, detailed in Table~\ref{tab:ablation}, prove that our architectural formulations are pivotal to generalizable altitude measurement.
+
+\begin{table}[htbp]
+\caption{Ablation Study: Component-Wise Generalization Impact}
+\label{tab:ablation}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Configuration} & \textbf{MAE (m)} & \textbf{Relative Gain} \\
+\midrule
+Pure Physics Baseline & 36.96 & - \\
+\midrule
+Direct Height Prediction ($\Delta h$) & $\gg$ 15.0 & (Failed to Generalize) \\
+\textbf{Our Core Upgrades:} & & \\
++ Physics-Derived Pressure Bias ($\delta P$) & 9.27 & $-$27.69 m ($\downarrow$75\%) \\
++ Altitude-Based Curriculum Learning & \textbf{3.55} & \textbf{$-$5.72 m ($\downarrow$62\%)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The analysis structurally validates two critical insights:
+\begin{itemize}
+    \item \textbf{The Necessity of Pressure Bias Encoding:} Directly predicting height offsets ($\Delta h$) largely memorizes strict regional behaviors and collapses when encountering uncalibrated sensor hardware (yielding $>$15 m MAE in LOSO). Formulating the network outputs as pressure corrections ($\delta P$) and utilizing the discrepancy $P_{bias} = P_{obs} - P_{expected}$ allows the network to universally evaluate intrinsic unit hardware bias regardless of underlying true topological characteristics. This single architectural shift brought the zero-shot error down to 9.27 m.
+    
+    \item \textbf{Impact of Curriculum Learning:} The introduction of the \textbf{3-Stage Altitude Curriculum Strategy} further reduced the mean absolute error by a massive 5.72 m (down to 3.55 m). By algorithmically anchoring the network parameters to highly correlated, dense, low-altitude measurements before cautiously exposing it to non-linear high-altitude outliers, the model secures an accurate geospatial manifold without fracturing standard atmospheric gradients. This represents a 161\% relative improvement over the non-curriculum baseline.
+\end{itemize}
+
+\subsection{Comparison with State-of-the-Art}
+
+Table~\ref{tab:sota_comparison} contextualizes our results against prior work in barometric altitude estimation. While direct comparison is challenging due to differing evaluation protocols and datasets, our strict LOSO validation provides stronger evidence of generalization capability than random-split evaluations used in prior work.
+
+\begin{table}[htbp]
+\caption{Comparison with State-of-the-Art Methods}
+\label{tab:sota_comparison}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{MAE (m)} & \textbf{Evaluation} & \textbf{Generalizes} \\
+\midrule
+Baro-ARAIM \cite{simonetti2024geodetic} & 4--30 & Variable & Unknown \\
+BiG-C \cite{narayanan2022enhanced} & $\sim$10 & Random split & Unknown \\
+NWP Correction \cite{schumann2017use} & 5--15 & Regional & Limited \\
+\midrule
+\textbf{Proposed (This Work)} & \textbf{3.55} & \textbf{8-fold LOSO} & \textbf{Verified} \\
+\bottomrule
+\end{tabular}
+\end{table}

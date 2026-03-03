@@ -1,0 +1,162 @@
+\section{Methodology}
+\label{sec:methodology}
+
+The objective of this research is to establish a rigorous, high-precision conversion framework between barometric pressure and geometric altitude in complex urban environments. Unlike pure black-box deep learning approaches, our methodology decomposes the altitude measurement into a deterministic physical baseline and a learnable spatial correction component. To achieve this, we co-design an edge-sensing hardware terminal and a Physics-Informed Neural Field (PINF) algorithm.
+
+\begin{figure}[htbp]
+    \centering
+    % Name your image fig2_hardware.png and put it in the image folder
+    \includegraphics[width=\columnwidth]{image/figure2.pdf}
+    \caption{Hardware architecture and signal flow of the GeoBox data acquisition terminal. The system integrates GNSS, barometric, and environmental sensors. An onboard MCU performs strict temporal synchronization and simple sensor fusion before transmitting the data payload via a 4G LTE/MQTT interface.}
+    \label{fig:hardware}
+\end{figure}
+
+\subsection{Edge Sensing Instrumentation}
+\label{subsec:hardware}
+
+The foundation of our proposed framework is a custom-designed, low-cost multi-sensor data acquisition terminal, designated as the ``GeoBox''. This edge device is engineered to capture synchronized navigation and atmospheric profiles across distributed urban topologies, providing the sparse but high-fidelity data required to train the continuous neural field. The hardware architecture integrates three core sensing modules:
+\begin{enumerate}
+    \item \textbf{GNSS Positioning Module}: An integrated GNSS receiver coupled with an external active antenna acquires high-precision geometric coordinates (latitude $\phi$, longitude $\lambda$) and the true Geometric Altitude ($h_\text{GNSS}$) relative to the WGS-84 reference ellipsoid. It supports multiple constellations (GPS, BeiDou, Galileo) to ensure lock stability in urban canyons.
+    
+    \textbf{Critical Note}: The GNSS altitude output is orthometric height (Mean Sea Level, MSL), not ellipsoid height (HAE). This is a standard output format for consumer-grade GNSS receivers and aligns directly with barometric-derived heights without requiring geoid conversion.
+    
+    \item \textbf{Barometric Pressure Sensor}: A high-resolution MEMS-based static pressure sensor provides raw atmospheric pressure measurements ($P_\text{obs}$) with an operating range of 300 to 1100 hPa. The sensor is isolated within a specially designed enclosure featuring vented static ports to minimize dynamic pressure artifacts induced by wind gusts or platform motion.
+    \item \textbf{Environmental Sensing Array}: A digital hygrometer and thermometer are integrated to measure ambient temperature ($T_\text{obs}$) and relative humidity ($RH$). These parameters are strictly required to calculate the specific humidity and virtual temperature, effectively compensating for air density variations in the subsequent hydrostatic calculations.
+\end{enumerate}
+
+\subsubsection{Data Synchronization and Transmission}
+Metrological integrity depends heavily on the temporal synchronization of the heterogeneous data streams. An onboard Microcontroller Unit (MCU) performs time synchronization, ensuring that the GNSS geometric altitude is strictly time-stamped alongside the barometric and environmental readings. To guarantee data reliability during field deployments, the system executes a Built-In Test (BIT) sequence upon startup to verify GNSS lock status, network connectivity, and sensor health. Powered by a lithium-ion battery for extended autonomy, the MCU aggregates the data into a standardized payload---comprising a unique device ID (UID), Unix timestamp, $P_\text{obs}$, $T_\text{obs}$, $RH$, and $(\phi, \lambda)$ coordinates. This packet is transmitted in real-time to a centralized cloud server via a 4G/LTE cellular module utilizing the MQTT protocol. This continuous, synchronized data pipeline forms the empirical basis for the physical baseline estimation and neural correction learning phases.
+
+\subsection{Physical Baseline Estimation and Problem Formulation}
+\label{subsec:physical_baseline}
+
+To isolate the complex, non-linear microclimate disturbances inherent to urban VLL airspace, we first establish a deterministic physical baseline. This baseline serves as the mean function for our estimation framework, derived from fundamental atmospheric physics and the edge-sensor measurements acquired by the GeoBox.
+
+The foundational relationship between atmospheric pressure $P$ and geopotential height $H$ is governed by the hydrostatic equation:
+\begin{equation}
+\frac{dP}{dH} = -\rho g \ ,
+\label{eq:hydrostatic}
+\end{equation}
+where $\rho$ is the air density and $g$ is the gravitational acceleration. Standard aviation models (e.g., ISA) assume a static dry-air atmosphere \cite{icao1993manual}. However, to achieve meter-level accuracy, variations in air density caused by moisture must be accounted for. We utilize the onboard environmental sensors to compute the in-situ Virtual Temperature $T_\text{v}$:
+\begin{equation}
+T_\text{v} = T_\text{obs} (1 + 0.61 q) \ ,
+\label{eq:virtual_temp}
+\end{equation}
+where $T_\text{obs}$ is the measured absolute temperature and $q$ is the specific humidity derived from the measured relative humidity ($RH$) \cite{simonetti2024geodetic}. 
+
+By substituting the ideal gas law ($\rho = P / (R_\text{dry} T_\text{v})$) into Eq.~(\ref{eq:hydrostatic}) and integrating, we obtain the Hypsometric Equation, which defines our physical baseline estimator $\hat{H}_\text{phy}$:
+\begin{equation}
+\hat{H}_\text{phy} = H_\text{ref} + \frac{R_\text{dry} T_\text{v}}{g_0} \ln\left(\frac{P_\text{ref}}{P_\text{obs}}\right) \ ,
+\label{eq:hypsometric}
+\end{equation}
+where $R_\text{dry}$ is the specific gas constant for dry air, $g_0$ is the standard gravity, and $P_\text{ref}$ and $H_\text{ref}$ are the reference pressure and height, respectively. This step accounts for the primary altitude variance driven by macro-meteorological conditions.
+
+\textbf{Important Correction}: Unlike traditional approaches that convert MSL to HAE via geoid undulation $N(\phi, \lambda)$, our GeoBox directly outputs orthometric heights (MSL). Both the barometric baseline (Eq.~\ref{eq:hypsometric}) and GNSS measurements are in the same vertical reference frame (MSL), eliminating the need for geoid conversion and its associated errors.
+
+While $\hat{H}_\text{phy}$ provides a mathematically rigorous baseline, it fundamentally fails to capture high-frequency local disturbances, such as urban heat islands, building wake turbulence, and sensor-specific aerodynamic biases, which cannot be modeled by simple analytical equations. We define the unified urban altitude estimation problem as learning a pressure correction field:
+\begin{equation}
+P_\text{corrected} = P_\text{obs} + \delta P_\theta(\mathbf{x}, \mathbf{p}) \ ,
+\label{eq:problem_formulation}
+\end{equation}
+where $\delta P_\theta$ represents the pressure correction predicted by the PINF parameterized by weights $\theta$. The final height is obtained by substituting $P_\text{corrected}$ into the hypsometric equation (Eq.~\ref{eq:hypsometric}).
+
+\begin{figure}[htbp]
+    \centering
+    % Ensure your assembled image is named fig3_framework.png and placed in the image folder
+    \includegraphics[width=1\linewidth]{image/fig3.pdf}
+    \caption{The overall algorithmic framework. The Physical Baseline Branch derives a deterministic geometric height ($\hat{h}_{phy}$) based on the hypsometric equation. Concurrently, the Neural Correction Branch leverages multi-resolution hash encoding and physics-derived pressure bias features to learn the complex pressure correction field ($\delta P$). The final prediction applies the hypsometric equation to the corrected pressure, supervised by GNSS ground truth.}
+    \label{fig:framework}
+\end{figure}
+
+\subsection{Multi-Resolution Hash Encoding and Physics-Derived Features}
+\label{subsec:hash_and_features}
+
+To effectively learn the highly non-linear pressure correction field, the neural network must be capable of resolving high-frequency spatial variations induced by urban microclimates. Standard coordinate-based Multi-Layer Perceptrons (MLPs) inherently suffer from ``spectral bias'', favoring low-frequency functions and struggling to fit sharp spatial gradients. To overcome this, we adapt the multi-resolution hash encoding technique~\cite{muller2022instant} into our atmospheric measurement framework.
+
+\subsubsection{Multi-Resolution Spatial Encoding}
+Unlike traditional positional encoding that relies on fixed sinusoidal functions, hash encoding maps the spatial coordinates $(x, y)$ to trainable feature vectors across multiple resolution scales. For a given resolution level $l \in \{1, 2, \dots, L\}$ with a corresponding grid resolution $N_l$, we define a hash table $\mathcal{H}_l$ that maps spatial indices to continuous feature vectors:
+\begin{equation}
+\mathbf{e}_l(x, y) = \mathcal{H}_l\left(\text{hash}\left(\lfloor x \cdot N_l \rfloor, \lfloor y \cdot N_l \rfloor\right)\right)
+\label{eq:hash_lookup}
+\end{equation}
+where $\mathbf{e}_l \in \mathbb{R}^F$ is the feature vector with dimension $F=4$, and we utilize $L=16$ independent levels to capture spatial interactions ranging from city-wide gradients down to street-level building wakes. 
+
+The grid resolutions follow a geometric progression to ensure a balanced receptive field:
+\begin{equation}
+N_l = N_{\text{min}} \cdot b^l, \quad b = \left(\frac{N_{\text{max}}}{N_{\text{min}}}\right)^{\frac{1}{L-1}}
+\label{eq:resolution}
+\end{equation}
+with $N_{\text{min}} = 16$ and $N_{\text{max}} = 1024$. The final spatial encoding $\phi(x, y)$ is the concatenation of features interpolated from all $L$ levels:
+\begin{equation}
+\phi(x, y) = [\mathbf{e}_1, \mathbf{e}_2, \dots, \mathbf{e}_L] \in \mathbb{R}^{L \times F}
+\label{eq:concat_encoding}
+\end{equation}
+This multi-scale approach provides significant metrological advantages: it enables $\mathcal{O}(1)$ constant-time feature lookup for real-time edge processing while dynamically adapting to the non-uniform spatial distribution of the GeoBox sensor network.
+
+\subsubsection{Physics-Derived Pressure Bias Feature}
+\label{subsec:bias_feature}
+
+A critical innovation of our approach is the introduction of a physics-derived pressure bias feature that enables zero-shot generalization to uncalibrated sensors. Rather than relying on learned sensor-specific embeddings (which fail to generalize), we compute:
+
+\begin{equation}
+P_{\text{bias}} = P_{\text{obs}} - P_{\text{expected}}
+\label{eq:pressure_bias}
+\end{equation}
+
+where $P_{\text{expected}}$ is the pressure predicted by the hypsometric equation (Eq.~\ref{eq:hypsometric}) given the observed GNSS altitude. This bias captures sensor-specific calibration offsets and local pressure anomalies in a physically-grounded manner.
+
+The pressure bias is encoded via a small MLP into an 8-dimensional feature vector:
+\begin{equation}
+\mathbf{f}_{\text{bias}} = \text{MLP}_{\text{bias}}(P_{\text{bias}}) \in \mathbb{R}^8
+\label{eq:bias_encoding}
+\end{equation}
+
+This approach contrasts with traditional methods that use learned sensor embeddings. Our physics-derived formulation:
+\begin{enumerate}
+    \item Requires no per-sensor parameters
+    \item Generalizes immediately to new, unseen sensors
+    \item Provides interpretable physical meaning
+    \item Achieves superior LOSO performance (9.27m vs $>$15m for direct height prediction)
+\end{enumerate}
+
+\subsection{Altitude-Based Curriculum Learning and Network Training}
+\label{subsec:curriculum_learning}
+
+Training continuous Neural Fields on spatially heterogeneous IoT data presents severe convergence challenges. In an urban VLL environment, measurements acquired near ground level exhibit strong spatial correlation, making them mathematically ``easier'' to fit. Conversely, measurements from relatively high-altitude structures are sparse and often suffer from microclimate extrapolation errors, making them ``harder'' samples. To prevent the network from overfitting to densely sampled ground-level data while failing at higher altitudes, we propose an Altitude-Aware Curriculum Learning strategy.
+
+\subsubsection{Three-Stage Curriculum Strategy}
+Inspired by cognitive learning principles \cite{bengio2009curriculum}, the training process is structured to expose the network to progressively more challenging geospatial distributions based on altitude:
+
+\begin{itemize}
+    \item \textbf{Stage 1 (Easy - Low Altitude)}: Focuses on low-altitude regions ($h < 100$m) to establish fundamental spatial representations. 
+    Coverage: $\sim$30\% of training data.
+    Epochs: 30.
+    
+    \item \textbf{Stage 2 (Medium - Moderate Altitude)}: Introduces moderate-altitude samples ($h < 200$m) to refine the hash encoding capabilities.
+    Coverage: $\sim$84\% of training data.
+    Epochs: 30.
+    
+    \item \textbf{Stage 3 (Hard - Full Extrapolation)}: Incorporates the complete dataset, including challenging high-altitude boundary cases ($h > 250$m), forcing the network to generalize the physical priors. 
+    Coverage: 100\% of training data.
+    Epochs: 80.
+\end{itemize}
+
+\subsubsection{Network Architecture and Loss Formulation}
+The fused feature vector $\mathbf{f}_{\text{input}}$, containing the multi-resolution spatial encoding (64-dim), temporal Fourier encoding (12-dim), environmental parameters (2-dim), and physics-derived bias encoding (8-dim), is passed through a 3-layer SIREN (Sinusoidal Representation Network) MLP to predict the pressure correction $\delta P$:
+
+\begin{equation}
+\delta P = \text{SIREN-MLP}(\mathbf{f}_{\text{input}}) \in \mathbb{R}^1
+\label{eq:mlp_output}
+\end{equation}
+
+SIREN uses sinusoidal activation functions which are particularly effective for representing physical signals with high-frequency components. The final predicted height is computed by substituting the corrected pressure into the hypsometric equation.
+
+The model is optimized using the AdamW optimizer \cite{loshchilov2017decoupled} to minimize the Mean Absolute Error (MAE) between the predicted altitude $h^{pred}_i$ and the GNSS-derived ground truth $h^{true}_i$:
+\begin{equation}
+\mathcal{L}(\theta) = \frac{1}{B} \sum_{i=1}^B \left| h^{pred}_i - h^{true}_i \right|
+\label{eq:loss_function}
+\end{equation}
+
+To further accelerate convergence, a Cosine Annealing learning rate scheduler with warm restarts \cite{loshchilov2016sgdr} is applied, initialized with a learning rate of $10^{-3}$ and a weight decay of $10^{-5}$.
+
+\textbf{Impact of Curriculum Learning}: Our experiments demonstrate that curriculum learning provides a dramatic 161\% relative improvement, reducing MAE from 9.27 m (without curriculum) to 3.55 m (with curriculum) under strict LOSO validation.

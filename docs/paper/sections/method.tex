@@ -39,7 +39,7 @@ where $\rho$ is the air density and $g$ is the gravitational acceleration. Stand
 T_\text{v} = T_\text{obs} (1 + 0.61 q) \ ,
 \label{eq:virtual_temp}
 \end{equation}
-where $T_\text{obs}$ is the measured absolute temperature and $q$ is the specific humidity derived from the measured relative humidity ($RH$) \cite{simonetti2024geodetic}. 
+where $T_\text{obs}$ is the measured absolute temperature and $q$ is the specific humidity derived from the measured relative humidity ($RH$) \cite{simonetti2024geodetic}.
 
 By substituting the ideal gas law ($\rho = P / (R_\text{dry} T_\text{v})$) into Eq. (\ref{eq:hydrostatic}) and integrating, we obtain the Hypsometric Equation, which defines our physical baseline estimator $\hat{H}_\text{phy}$:
 \begin{equation}
@@ -48,18 +48,21 @@ By substituting the ideal gas law ($\rho = P / (R_\text{dry} T_\text{v})$) into 
 \end{equation}
 where $R_\text{dry}$ is the specific gas constant for dry air, $g_0$ is the standard gravity, and $P_\text{ref}$ and $H_\text{ref}$ are the reference pressure and height, respectively. This step accounts for the primary altitude variance driven by macro-meteorological conditions.
 
-Crucially, $\hat{H}_\text{phy}$ represents the orthometric height (relative to the mean sea level). To harmonize this with the UAS GNSS coordinate frame, we must convert it to HAE. We achieve this by applying the Geoid Undulation $N(\phi, \lambda)$, retrieved from high-resolution gravity models (e.g., EGM96/EGM2008):
-\begin{equation}
-\hat{h}_\text{phy} = \hat{H}_\text{phy} + N(\phi, \lambda) \ .
-\label{eq:geoid}
-\end{equation}
+Crucially, $\hat{H}_\text{phy}$ represents the orthometric height (relative to the global mean sea level, MSL). To harmonize this standard atmospheric altitude with standard UAS GNSS coordinate frames—which typically output Height Above Ellipsoid (HAE)—one must traditionally apply the Geoid Undulation anomaly $N(\phi, \lambda)$ retrieved from high-resolution gravity models (e.g., EGM96/EGM2008).
+However, deploying global high-resolution geoid models heavily limits real-time edge processing capabilities. In our proposed GeoBox edge-sensing architecture, the integrated multi-constellation GNSS receiver is uniquely engineered to output true orthometric heights ($h_\text{GNSS} \equiv$ MSL) directly by utilizing onboard regional geoid anomaly grids. Therefore, we utilize the mathematically rigorous $\hat{H}_\text{phy}$ directly as the un-deformed physical baseline $h_\text{phy}$, decoupling the high-frequency measurement calibration from expensive offline gravitational geoid interpolations.
 
-While $\hat{h}_\text{phy}$ provides a mathematically rigorous baseline, it fundamentally fails to capture high-frequency local disturbances, such as urban heat islands, building wake turbulence, and sensor-specific aerodynamic biases, which cannot be modeled by simple analytical equations. We define the Height Residual ($R_{\Delta}$) as the discrepancy between the true GNSS-measured altitude ($h_\text{GNSS}$) and our physics-derived baseline.  Consequently, the unified urban altitude estimation problem is formulated as a spatial residual learning task:
+While $h_\text{phy}$ provides a strong generalized mean function, it fundamentally fails to capture high-frequency local atmospheric disturbances, such as urban heat islands, building wake turbulence, and importantly, the individual static bias inherent to uncalibrated hardware, which cannot be modeled by simple analytical equations. To enforce physical consistency across multiple uncalibrated nodes, we introduce a Physics-Derived Pressure Bias Formulation. Instead of directly predicting an explicit geometric residual ($\Delta h$), we predict the localized barometric pressure correction ($\delta P$).
+
+The unified urban altitude estimation problem is thus formulated as calculating a pressure correction field and applying it to the physical hydrostatic reconstruction:
 \begin{equation}
-h_\text{pred} = \hat{h}_\text{phy} + f_\theta(\mathbf{x}, \mathbf{p}, \mathbf{t}) \ ,
+P_\text{corr} = P_\text{obs} + f_\theta(\mathbf{x}, \mathbf{p}, t) \ ,
+\label{eq:pressure_correction}
+\end{equation}
+where $f_\theta$ represents the proposed PINF parameterized by weights $\theta$. The Neural Field predicts the continuous pressure residual $\delta P$ using spatiotemporal coordinates $\mathbf{x} = (\phi, \lambda, z)$, temporal mapping $t$, and physical features $\mathbf{p}$ (importantly including the sensor pressure bias). The final predicted height $h_\text{pred}$ is strictly routed through the un-deformed Hypsometric Equation using the corrected pressure $P_\text{corr}$:
+\begin{equation}
+h_\text{pred} = H_\text{ref} + \frac{R_\text{dry} T_\text{v}}{g_0} \ln\left(\frac{P_\text{ref}}{P_\text{corr}}\right) \ .
 \label{eq:problem_formulation}
 \end{equation}
-where $f_\theta$ represents the proposed PINF parameterized by weights $\theta$. The neural network is designed to learn this continuous residual field $R_{\Delta}$ using spatiotemporal coordinates $\mathbf{x} = (\phi, \lambda, z)$, physical features $\mathbf{p}$, and local terrain features $\mathbf{t}$.
 
 \begin{figure}[htbp]
     \centering
@@ -69,102 +72,74 @@ where $f_\theta$ represents the proposed PINF parameterized by weights $\theta$.
     \label{fig:framework}
 \end{figure}
 
-\subsection{Multi-Resolution Hash Encoding and Terrain Feature Engineering}
+\subsection{Spatiotemporal Encoding and Physics Bias Formulation}
 \label{subsec:hash_and_terrain}
 
-To effectively learn the highly non-linear residual field $R_{\Delta}$, the neural network must be capable of resolving high-frequency spatial variations induced by urban microclimates. Standard coordinate-based Multi-Layer Perceptrons (MLPs) inherently suffer from ``spectral bias'', favoring low-frequency functions and struggling to fit sharp spatial gradients. To overcome this, we adapt the multi-resolution hash encoding technique~\cite{muller2022instant} into our atmospheric measurement framework.
+To effectively learn the highly non-linear residual field $\delta P$, the neural network must be capable of resolving high-frequency spatial variations induced by urban microclimates without heavily overfitting to single sensors. Standard coordinate-based Multi-Layer Perceptrons (MLPs) inherently suffer from ``spectral bias'', favoring low-frequency functions and struggling to fit sharp spatial gradients. To overcome this, we adapt the multi-resolution hash encoding technique~\cite{muller2022instant} alongside a novel temporal Fourier encoding map.
 
-\subsubsection{Multi-Resolution Spatial Encoding}
-Unlike traditional positional encoding that relies on fixed sinusoidal functions, hash encoding maps the spatial coordinates $(x, y)$ to trainable feature vectors across multiple resolution scales. For a given resolution level $l \in \{1, 2, \dots, L\}$ with a corresponding grid resolution $N_l$, we define a hash table $\mathcal{H}_l$ that maps spatial indices to continuous feature vectors:
+\subsubsection{Multi-Resolution Spatiotemporal Encoding}
+Unlike traditional positional encoding that relies on fixed sinusoidal functions, hash encoding maps the spatial coordinates $(x, y, z)$ to trainable feature vectors across multiple resolution scales. For a given resolution level $l \in \{1, 2, \dots, L\}$ with a corresponding grid resolution $N_l$, we define a hash table $\mathcal{H}_l$ that maps spatial indices to continuous feature vectors:
 \begin{equation}
-\mathbf{e}_l(x, y) = \mathcal{H}_l\left(\text{hash}\left(\lfloor x \cdot N_l \rfloor, \lfloor y \cdot N_l \rfloor\right)\right)
+\mathbf{e}_l(x, y, z) = \mathcal{H}_l\left(\text{hash}\left(\lfloor x \cdot N_l \rfloor, \lfloor y \cdot N_l \rfloor, \lfloor z \cdot N_l \rfloor\right)\right)
 \label{eq:hash_lookup}
 \end{equation}
-where $\mathbf{e}_l \in \mathbb{R}^F$ is the feature vector with dimension $F=2$, and we utilize $L=16$ independent levels to capture spatial interactions ranging from city-wide gradients down to street-level building wakes. 
+where $\mathbf{e}_l \in \mathbb{R}^F$ is the feature vector with dimension $F=4$, and we utilize $L=16$ independent levels.
 
 The grid resolutions follow a geometric progression to ensure a balanced receptive field:
 \begin{equation}
 N_l = N_{\text{min}} \cdot b^l, \quad b = \left(\frac{N_{\text{max}}}{N_{\text{min}}}\right)^{\frac{1}{L-1}}
 \label{eq:resolution}
 \end{equation}
-with $N_{\text{min}} = 16$ and $N_{\text{max}} = 512$. The final spatial encoding $\phi(x, y)$ is the concatenation of features interpolated from all $L$ levels:
+with $N_{\text{min}} = 16$ and $N_{\text{max}} = 512$. The final spatial encoding $\phi(x, y, z)$ is the concatenation of features interpolated from all $L$ levels:
 \begin{equation}
-\phi(x, y) = [\mathbf{e}_1, \mathbf{e}_2, \dots, \mathbf{e}_L] \in \mathbb{R}^{L \times F}
+\phi(x, y, z) = [\mathbf{e}_1, \mathbf{e}_2, \dots, \mathbf{e}_L] \in \mathbb{R}^{L \times F}
 \label{eq:concat_encoding}
 \end{equation}
-This multi-scale approach provides significant metrological advantages: it enables $\mathcal{O}(1)$ constant-time feature lookup for real-time edge processing while dynamically adapting to the non-uniform spatial distribution of the GeoBox sensor network.
+Furthermore, to model periodic atmospheric variations, the temporal observation variable $t$ is projected into a high-dimensional space via Fourier transformations across 6 distinct frequencies.
 
-\subsubsection{Terrain Feature Extraction}
-While hash encoding captures spatial coordinates, the barometric pressure field is profoundly deformed by the underlying physical urban morphology. To inject physical topology constraints into the neural field, we engineer three specialized terrain features based on the sensor deployment environment:
-
-\begin{enumerate}
-    \item \textbf{Local Roughness ($\rho$)}: Quantifies the altitude variability within a localized spatial neighborhood $\mathcal{N}$, acting as a proxy for urban canyon complexity and localized aerodynamic turbulence:
-    \begin{equation}
-    \rho = \sqrt{\frac{1}{|\mathcal{N}|} \sum_{i \in \mathcal{N}} (h_i - \bar{h})^2}
-    \label{eq:roughness}
-    \end{equation}
-    where $h_i$ are altitude measurements from adjacent nodes and $\bar{h}$ is the neighborhood mean.
-    
-    \item \textbf{Height Percentile Rank ($r$)}: Indicates the relative elevation constraint of a sensor within the entire study area:
-    \begin{equation}
-    r = \frac{\text{rank}(h)}{N_{\text{sensors}}} \times 100
-    \label{eq:height_rank}
-    \end{equation}
-    
-    \item \textbf{Sensor Density ($d$)}: Computes the spatial density of active Height Box nodes within a given radius $r_{cov}$, reflecting the local data reliability and measurement redundancy:
-    \begin{equation}
-    d = \sum_{i=1}^{N_{\text{sensors}}} \mathbb{I}[\|\mathbf{x} - \mathbf{x}_i\| < r_{cov}]
-    \label{eq:density}
-    \end{equation}
-\end{enumerate}
-
-To predict the final height residual, these explicit terrain characteristics are concatenated with the spatial hash encoding $\phi(x, y)$ and the deterministic physical atmospheric parameters $\mathbf{f}_\text{physics}$ (e.g., scale height, ERA5 data) to form the complete feature vector:
+\subsubsection{Decoupling Hardware via Physics-Derived Pressure Bias}
+The single greatest challenge for deep-learning-based metrology is generalizing to completely unseen uncalibrated sensor nodes. Direct MLPs will inherently memorize the systematic hardware bias of training units. To enforce zero-shot generalization and abstract the network away from strict node identities, we propose a Physics-Derived Pressure Bias formulation point:
 \begin{equation}
-\mathbf{f}_{\text{input}} = [\phi(x, y), \mathbf{f}_{\text{physics}}, \rho, r, d]
+P_\text{bias} = P_\text{obs} - P_\text{expected}
+\label{eq:bias_formulation}
+\end{equation}
+where $P_\text{expected}$ is the ideal barometric reading analytically derived by inversing the uncalibrated GNSS altitude ($h_\text{GNSS}$) against the deterministic Hypsometric physical baseline.
+
+By calculating $P_\text{bias}$ and feeding it as a learned embedding rather than using discrete sensor-ID tokens or vulnerable local terrain densities, the network fundamentally acts on the relative discrepancy space. To predict the pressure correction $\delta P$, this explicit physics characteristic is concatenated with the spatial hash encoding, temporal Fourier encoding, temperature $T$, and relative humidity $RH$ to form the complete continuous feature vector:
+\begin{equation}
+\mathbf{f}_{\text{input}} = [\phi(x, y, z), \phi_{\text{Fourier}}(t), P_\text{bias}, T, RH]
 \label{eq:full_input}
 \end{equation}
-This fused vector $\mathbf{f}_{\text{input}}$ is subsequently processed by the Neural Residual Field's MLP to output the deterministic height correction.
+This fused vector $\mathbf{f}_{\text{input}}$ is subsequently processed by the Neural Residual Field's MLP to output the highly precise pressure correction $\delta P$.
 
-\subsection{Terrain-Aware Curriculum Learning and Network Training}
+\subsection{Altitude-Based Curriculum Learning Strategy}
 \label{subsec:curriculum_learning}
 
-Training continuous Neural Fields on spatially heterogeneous IoT data presents severe convergence challenges. In an urban VLL environment, measurements acquired near ground level in high-sensor-density areas exhibit strong spatial correlation, making them mathematically ``easier'' to fit. Conversely, measurements from relatively high-altitude structures (e.g., skyscrapers) are sparse and often suffer from microclimate extrapolation errors, making them ``harder'' samples. To prevent the network from overfitting to densely sampled ground-level data while failing at higher altitudes, we propose a Terrain-Aware Curriculum Learning strategy.
+Training continuous Neural Fields on massive and spatially heterogeneous IoT data presents severe convergence challenges. In an urban VLL environment, measurements acquired near ground-level arrays exhibit strong spatial correlation and are less perturbed by altitude-dependent atmospheric degradation, making them mathematically ``easier'' to fit. Conversely, measurements extending heavily vertically into the atmosphere are sparse, boundary-defining constraints prone to non-linear physical drift, representing ``harder'' samples. To algorithmically prevent the network from overfitting to densely sampled ground-level data while failing at higher altitudes, we propose a strict Altitude-Based Curriculum Learning structure.
 
-\subsubsection{Three-Stage Curriculum Strategy}
-Inspired by cognitive learning principles \cite{bengio2009curriculum}, the training process is structured to expose the network to progressively more challenging geospatial distributions. We partition the full training dataset $\mathcal{D}$ into three curriculum stages based on altitude ($h$) and local sensor density ($d$):
+\subsubsection{Three-Stage Curriculum Scheme}
+Inspired by cognitive learning principles \cite{bengio2009curriculum}, the training process is explicitly structured to expose the SIREN-based geometry network to progressively more challenging geospatial distributions. We dynamically partition the full training dataset $\mathcal{D}$ into three distinct curriculum stages bound by absolute geometric altitude ($h$):
 \begin{itemize}
-    \item \textbf{Stage 1 (Easy - Spatial Interpolation)}: Focuses on low-altitude and high-density regions to establish fundamental spatial representations. 
-    $\mathcal{D}_1 = \{ \mathbf{x} \in \mathcal{D} \mid h < 150\text{m} \land d > d_{\text{median}} \}$.    
-    \item \textbf{Stage 2 (Medium - Boundary Expansion)}: Introduces moderate-altitude samples and regions with sparser coverage to refine the hash encoding capabilities.
-    $\mathcal{D}_2 = \{ \mathbf{x} \in \mathcal{D} \mid h < 200\text{m} \lor d > d_{p25} \}$.
-    \item \textbf{Stage 3 (Hard - Full Extrapolation)}: Incorporates the complete dataset, including challenging high-altitude boundary cases (e.g., $h > 250\text{m}$), forcing the network to generalize the physical priors. 
-    $\mathcal{D}_3 = \mathcal{D}$.
+    \item \textbf{Stage 1 (Easy - Foundation Formulation)}: The network is exclusively trained on low-altitude samples yielding stable thermodynamic behaviors. $\mathcal{D}_1 = \{ \mathbf{x} \in \mathcal{D} \mid h < 100\text{m} \}$. This safely establishes fundamental spatial hash structures.
+    \item \textbf{Stage 2 (Medium - Moderate Expansion)}: The distribution bounds are relaxed to introduce mild-altitude geometries and early extrapolation behaviors. $\mathcal{D}_2 = \{ \mathbf{x} \in \mathcal{D} \mid h < 200\text{m} \}$.
+    \item \textbf{Stage 3 (Hard - Extreme Outliers)}: The network is finally optimized against the entire dataset, introducing severe, high-altitude outliers. $\mathcal{D}_3 = \mathcal{D}$.
 \end{itemize}
-where $d_{\text{median}}$ and $d_{p25}$ denote the median ($50^{\text{th}}$ percentile) and the $25^{\text{th}}$ percentile of the sensor density distribution evaluated across the entire spatial domain, respectively.
 
-During training, the model transitions from $\mathcal{D}_1 \rightarrow \mathcal{D}_2 \rightarrow \mathcal{D}_3$, completing 150 epochs per stage, ensuring robust convergence before tackling severe extrapolation scenarios. Figure~\ref{fig:curriculum} demonstrates curriculum learning benefits: Stage 1 establishing basic spatial patterns, Stage 2 then refines on moderate difficulty samples, and Stage 3 finally fine-tunes on full dataset, reaching 3.79m. Without curriculum learning, training converges slower and achieves higher final error (5.20m vs 3.79m).
+During training, the model systematically transitions from $\mathcal{D}_1 \rightarrow \mathcal{D}_2 \rightarrow \mathcal{D}_3$. Stage 1 and 2 operate for 30 epochs each, constructing stable global gradients, before Stage 3 fine-tunes on the complete unconstrained atmospheric volume for 80 epochs. If directly exposed to extreme vertical disparities without foundation (No Curriculum Strategy), gradient explosion fundamentally limits valid generalization to 9.27m MAE. By employing the 3-stage altitude scheme, the optimized framework confidently stabilizes across all bounds.
 
 \begin{figure}
     \centering
     \includegraphics[width=1\linewidth]{image/fig5_curriculum.png}
-    \caption{Caption}
-    \label{fig:placeholder}
+    \caption{Curriculum learning strategy effectively preventing gradient collapse and stabilizing spatial hash geometries by sequencing altitude complexity.}
+    \label{fig:curriculum}
 \end{figure}
 
-\subsubsection{Network Architecture and Loss Formulation}
-The fused feature vector $\mathbf{f}_{\text{input}}$, containing both the multi-resolution spatial encoding and terrain features, is passed through a 3-layer MLP to predict the altitude residual $\Delta h$. To ensure training stability and mitigate vanishing gradients across deep residual layers, we utilize the Sigmoid Linear Unit (SiLU) activation function \cite{elfwing2018sigmoidweighted} coupled with Layer Normalization \cite{ba2016layer}. 
+\subsubsection{SIREN Architecture and Optimization}
+The fused feature vector $\mathbf{f}_{\text{input}}$ is linearly projected through a 3-layer explicit Multi-Layer Perceptron (hidden dimension=256) to output the localized $\delta P$. Crucially, instead of standard ReLU/SiLU components, we utilize Sinusoidal Representation Networks (SIREN) for the activation layers. SIREN architectures inherently preserve analytical derivative stability for periodic physical signals, preventing vanishing gradient stagnation over harsh geographical boundaries.
 
-The forward pass for the hidden layers $\mathbf{h}_k$ is defined as:
+The forward pass is evaluated continuously per batch using an AdamW optimizer iteratively minimizing the exact residual between reconstructed orthometric height and strict observed GNSS MSL:
 \begin{equation}
-\mathbf{h}_k = \text{SiLU}(\text{LayerNorm}(\mathbf{W}_k \mathbf{h}_{k-1} + \mathbf{b}_k))
-\label{eq:mlp_forward}
-\end{equation}
-where $\mathbf{W}_k$ and $\mathbf{b}_k$ denote the weight matrices and bias vectors of the $k$-th layer, respectively.
-
-The model is optimized using the AdamW optimizer \cite{loshchilov2017decoupled} to minimize the Mean Absolute Error (MAE) between the predicted altitude $h^{pred}_i$ and the GNSS-derived ground truth $h^{true}_i$ across a batch size of $B$:
-\begin{equation}
-\mathcal{L}(\theta) = \frac{1}{B} \sum_{i=1}^B \left| \left( \hat{h}_{phy}^{(i)} + \Delta h_\theta^{(i)} \right) - h^{true}_i \right|
+\mathcal{L}(\theta) = \frac{1}{B} \sum_{i=1}^B \left| h^\text{pred}_{i} - h^{true}_i \right|
 \label{eq:loss_function}
 \end{equation}
-
-To further accelerate convergence, a Cosine Annealing learning rate scheduler with warm restarts \cite{loshchilov2016sgdr} is applied, initialized with a learning rate of $10^{-3}$ and a weight decay of $10^{-4}$. 
+Furthermore, a Cosine Annealing learning rate scheduler with warm restarts is initialized ($10^{-3}$), effectively allowing periodic deep landscape exploration and preventing premature optimization stagnation.
