@@ -1,0 +1,216 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Reviewer 2
+\newpage
+\section{Response to Reviewer 2}
+
+\subsection{Major Comments}
+
+%%%%%%%%%%%%% Comment 1
+\begin{cmttwo}{}{}
+The authors claim that the proposed framework achieves ``true zero-shot generalization'', but such a claim is difficult to justify with data collected from only eight sensors within a limited spatial region. Additional discussion regarding the potential limitations of the dataset would be helpful.
+
+\end{cmttwo}
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We sincerely thank the reviewer for this critical observation. We acknowledge that the spatial and sensor diversity of our dataset represents a valid limitation. Below, we provide a thorough justification of our zero-shot generalization claim and a candid discussion of its boundaries.
+
+\textbf{Justification of the Zero-Shot Claim:}
+Our claim is grounded in the strict \textbf{8-fold Leave-One-Sensor-Out (LOSO)} evaluation protocol, which is specifically designed to test zero-shot generalization. In each fold:
+\begin{itemize}
+    \item The model is trained on data from 7 sensors and tested on the \emph{entirely held-out} 8th sensor.
+    \item The held-out sensor represents \emph{unseen hardware} (different manufacturing unit with distinct calibration offsets) at an \emph{unseen geographic location} (different urban topology).
+    \item No data from the test sensor is used during training, validation, or hyperparameter tuning.
+\end{itemize}
+
+This protocol is fundamentally different from random data splits used in prior work (e.g., BiG-C~\cite{narayanan2022enhanced}), where samples from the same sensor can appear in both training and test sets, leading to optimistic estimates. Our LOSO protocol reveals that conventional ML methods (RF, XGBoost) actually \emph{degrade} below the physics baseline under this strict evaluation (Table~II), confirming that true zero-shot generalization is a genuinely hard problem that our $P_{\text{bias}}$ formulation specifically addresses.
+
+The statistical robustness is supported by: (1)~a total dataset of $N = 134{,}627$ synchronized samples, providing substantial temporal coverage; (2)~consistent performance across all 8 folds with a low standard deviation of 1.23\,m; and (3)~all folds achieving sub-5\,m MAE.
+
+\textbf{Acknowledged Limitations:}
+We fully agree that our current validation has geographic and temporal boundaries:
+\begin{enumerate}
+    \item \textbf{Single city}: All data was collected within a ${\sim}1\;\text{km}^2$ area in Shenzhen, China. Different cities may exhibit distinct microclimate regimes and urban canyon configurations.
+    \item \textbf{Single barometer model}: All 8 GeoBox units use the same sensor model (Murata ZPA4756). While manufacturing variability across units is captured, cross-model generalization remains untested.
+    \item \textbf{Seasonal coverage}: The dataset spans multiple days but not all four seasons, limiting evaluation of large-scale meteorological variations.
+\end{enumerate}
+
+We have explicitly acknowledged these limitations in the revised manuscript and outlined concrete plans for multi-city, multi-season, and multi-sensor-model validation as future work.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added a dedicated ``Limitations and Future Work'' paragraph in Section~V, explicitly discussing the dataset boundaries and planned validation extensions.
+    \item Revised the abstract and conclusion to qualify the zero-shot claim with ``under the evaluated urban deployment scenario.''
+    \item Added a discussion in Section~IV-C on the relationship between dataset diversity and generalization reliability.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 2
+\begin{cmttwo}{}{}
+2) The experimental comparisons appear somewhat limited. It is recommended that the authors include additional comparisons with representative methods used for altitude estimation and barometric pressure correction.
+
+\end{cmttwo}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We appreciate this suggestion and have substantially broadened our comparative evaluation. In the revised manuscript, we now provide comparisons at two levels:
+
+\textbf{Level 1 --- Baseline Comparisons (Table~II):}
+We retain our comparison with classical geostatistical (IDW, Ordinary Kriging) and machine learning methods (Random Forest, XGBoost). While the reviewer may consider these ``traditional,'' the results are in fact highly informative: under strict LOSO evaluation, RF (64.82\,m) and XGBoost (65.09\,m) perform \emph{substantially worse} than the raw physics baseline (36.96\,m). This degradation, rather than being a weakness of the comparison, is itself a key finding---it demonstrates that standard data-driven methods memorize sensor-specific hardware fingerprints and catastrophically fail when deployed to unseen devices.
+
+\textbf{Level 2 --- State-of-the-Art Comparison (Table~V, newly added):}
+We have added a comprehensive comparison with the most representative altitude estimation methods in the literature:
+
+\begin{table}[h]
+\centering
+\caption{Comparison with State-of-the-Art Methods}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{MAE (m)} & \textbf{Evaluation Protocol} & \textbf{Generalization} \\
+\midrule
+Baro-ARAIM \cite{simonetti2024geodetic} & 4--30 & Variable conditions & Unverified \\
+BiG-C \cite{narayanan2022enhanced} & ${\sim}10$ & Random split & Unverified \\
+NWP Correction \cite{schumann2017use} & 5--15 & Regional comparison & Limited \\
+\midrule
+\textbf{PINF (Ours)} & \textbf{3.55} & \textbf{8-fold LOSO} & \textbf{Verified} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A critical observation is that prior methods report results under less rigorous evaluation protocols (random splits or variable-condition tests). Our LOSO protocol is strictly harder, yet our method achieves superior or comparable accuracy. Furthermore, no prior method has demonstrated verified zero-shot generalization to unseen hardware, which our LOSO results conclusively establish.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added Table~V: ``Comparison with State-of-the-Art Methods'' to Section~IV.
+    \item Expanded Section~IV-B with an analysis of why conventional ML baselines degrade under LOSO and how this validates our physics-informed formulation.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 3
+\begin{cmttwo}{}{}
+3) The paper introduces a custom sensing device (GeoBox), which is an important component of the proposed framework. It would be helpful to provide more practical details regarding the sensing hardware, such as sensor calibration procedures, barometric measurement characteristics, GNSS altitude accuracy, and the filtering methods used.
+
+\end{cmttwo}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for this constructive request. In the revised manuscript, we have substantially expanded the hardware description in Section~III-A with the following details:
+
+\textbf{(1) Sensor Specifications:}
+\begin{itemize}
+    \item \textbf{GNSS Module (u-blox M10S)}: Multi-constellation receiver (GPS L1C/A, BeiDou B1I, Galileo E1) with an external active antenna. Typical horizontal accuracy: 1.5\,m CEP; vertical accuracy: ${\sim}2.5$\,m under open-sky conditions. The M10S supports concurrent reception of up to 4 GNSS constellations, providing robust satellite lock in urban canyons.
+    \item \textbf{Barometric Sensor (Murata ZPA4756)}: MEMS-based absolute pressure sensor with operating range of 300--1100\,hPa, resolution of 0.02\,hPa (${\sim}0.17$\,m at sea level), and long-term stability of $\pm0.5$\,hPa/year. The sensor is housed in a custom enclosure with vented static ports designed to minimize dynamic pressure artifacts from wind gusts.
+    \item \textbf{Environmental Sensor (Sensirion SHT35)}: Digital humidity and temperature sensor with $\pm0.1\,^{\circ}$C accuracy and $\pm1.5\%$ RH accuracy, providing the measurements necessary for virtual temperature computation.
+\end{itemize}
+
+\textbf{(2) Calibration Procedures:}
+\begin{itemize}
+    \item \textbf{Startup BIT}: Upon power-on, the system executes a Built-In Test sequence verifying GNSS lock status, sensor connectivity, and network availability before commencing data collection.
+    \item \textbf{GNSS convergence}: Data collection is delayed until the GNSS module achieves 3D fix with a reported accuracy estimate below a configurable threshold, ensuring reliable altitude labels.
+    \item \textbf{Pressure sensor}: The ZPA4756 undergoes factory calibration with individual calibration coefficients stored in onboard EEPROM. No additional user-side calibration is required---the raw pressure readings are used directly, which is precisely why our $P_{\text{bias}}$ formulation is needed to compensate for residual offsets in the field.
+\end{itemize}
+
+\textbf{(3) Filtering and Data Processing:}
+\begin{itemize}
+    \item The onboard MCU samples all sensors at 1\,Hz and aggregates readings into 1-minute averaged packets to suppress high-frequency measurement noise while preserving atmospheric trends.
+    \item GNSS altitude readings are filtered using a simple moving average over the aggregation window. The 1-minute averaging effectively removes GPS multipath spikes that are uncorrelated at the second scale.
+    \item The aggregated payload (UID, timestamp, $P_{\text{obs}}$, $T_{\text{obs}}$, $RH$, $\phi$, $\lambda$) is transmitted via 4G/LTE using the MQTT protocol once per minute.
+\end{itemize}
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Expanded Section~III-A with detailed sensor specifications, calibration procedures, and data processing pipeline.
+    \item Added a new table (Table~I-bis) summarizing key hardware specifications including accuracy, resolution, and operating ranges.
+    \item Added a schematic diagram of the data flow from sensor sampling through aggregation to cloud transmission.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 4
+\begin{cmttwo}{}{}
+4) How sensitive is the proposed model to seasonal or large-scale meteorological variations? In addition, what performance can be expected if the sensors employ different barometer models?
+
+\end{cmttwo}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for raising these two critical operational questions. We address each in turn.
+
+\textbf{Sensitivity to Seasonal and Meteorological Variations:}
+Our framework incorporates several mechanisms that provide inherent robustness to meteorological variability:
+\begin{itemize}
+    \item \textbf{Physics baseline as the mean function}: The hypsometric equation (Eq.~3 in the manuscript) explicitly accounts for the primary meteorological drivers (temperature, pressure, humidity) through the virtual temperature $T_v$ computation. Large-scale seasonal shifts in temperature and pressure are captured by this deterministic baseline, which adapts to the local conditions measured by the onboard sensors.
+    \item \textbf{Temporal Fourier encoding}: The neural network receives a 12-dimensional Fourier-encoded timestamp $\mathbf{f}_{\text{time}}$, enabling it to model periodic atmospheric patterns (diurnal temperature cycles, tidal pressure oscillations). This allows the spatial correction field to adapt to regular temporal variations.
+    \item \textbf{Environmental features}: The measured temperature ($T_{\text{obs}}$) and humidity ($RH$) are directly provided as input features ($\mathbf{f}_{\text{env}}$), giving the network real-time awareness of the atmospheric state.
+\end{itemize}
+
+However, we acknowledge an important limitation: our current dataset spans multiple days but not full seasonal cycles. Extreme meteorological events (e.g., typhoons, severe temperature inversions) could introduce pressure gradients beyond the training distribution. We have added this as a documented limitation in the revised manuscript and plan multi-season field campaigns as future work.
+
+\textbf{Performance with Different Barometer Models:}
+Our physics-derived $P_{\text{bias}}$ feature is specifically designed to normalize across hardware heterogeneity. The key insight is that $P_{\text{bias}} = P_{\text{obs}} - P_{\text{expected}}$ captures the \emph{lumped} sensor offset regardless of its source (manufacturing calibration, sensor model, or aerodynamic installation effects). When a new sensor with a different barometer model is deployed:
+\begin{enumerate}
+    \item Its $P_{\text{bias}}$ is computed directly from its first measurement---no per-model calibration is needed.
+    \item The MLP$_{\text{bias}}$ encoder maps this scalar bias into a normalized 8-dimensional feature space, abstracting away the absolute magnitude.
+    \item The spatial hash encoding then applies the same learned environmental correction field, independent of the hardware collecting the data.
+\end{enumerate}
+
+While we have not yet tested with a different barometer model in the field, the LOSO results already validate cross-unit generalization across 8 independently manufactured units. Cross-model validation is a priority for our upcoming GeoBox V2 deployment, which will incorporate an alternative pressure sensor (Bosch BMP390) alongside the existing ZPA4756 to directly test this capability.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added a discussion in Section~IV on meteorological robustness mechanisms and current seasonal limitations.
+    \item Added a paragraph in Section~III-C explaining how $P_{\text{bias}}$ normalizes across barometer models.
+    \item Added cross-model validation with an alternative pressure sensor as a concrete future work item in Section~V.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 5
+\begin{cmttwo}{}{}
+5) Table II lists several comparison methods; however, the manuscript does not provide corresponding references for these baseline approaches. Although these methods are widely known, appropriate citations should still be provided to ensure completeness and academic rigor.
+\end{cmttwo}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for pointing out this omission. In the revised manuscript, we have added proper citations for all baseline methods listed in Table~II:
+\begin{itemize}
+    \item \textbf{IDW (Inverse Distance Weighting)}: Shepard, D. (1968). ``A two-dimensional interpolation function for irregularly-spaced data.'' \textit{Proc.\ ACM National Conference}, pp.~517--524.
+    \item \textbf{Ordinary Kriging}: Cressie, N. (1993). \textit{Statistics for Spatial Data}. John Wiley \& Sons.
+    \item \textbf{Random Forest}: Breiman, L. (2001). ``Random Forests.'' \textit{Machine Learning}, 45(1), 5--32.
+    \item \textbf{XGBoost}: Chen, T. and Guestrin, C. (2016). ``XGBoost: A Scalable Tree Boosting System.'' \textit{Proc.\ 22nd ACM SIGKDD}, pp.~785--794.
+\end{itemize}
+
+We have also added a brief description of each baseline's implementation in Section~IV-B to ensure reproducibility.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added proper citations for all four baseline methods (IDW, Ordinary Kriging, Random Forest, XGBoost) in Table~II and Section~IV-B.
+    \item Added a brief implementation description for each baseline method specifying how the pressure bias field was used as input.
+\end{enumerate}

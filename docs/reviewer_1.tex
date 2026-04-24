@@ -1,0 +1,246 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Reviewer 1
+\newpage
+\section{Response to Reviewer 1}
+
+\subsection{Major Comments}
+
+%%%%%%%%%%%%% Comment 1
+\begin{cmtone}{}{}
+This paper proposes an edge-sensing measurement framework to address accuracy limitations in low-altitude vertical positioning caused by environmental interference and barometric sensor biases. The research holds theoretical significance and practical value. However, several aspects require clarification and enhancement concerning methodological details, experimental comparisons, and generalization analysis. The specific comments are as follows:
+
+1. It is recommended to supplement the discussion with related research on urban altitude estimation.
+
+\end{cmtone}
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We sincerely thank the reviewer for this constructive suggestion. In the revised manuscript, we have expanded the Related Work section with a comprehensive comparison of existing urban altitude estimation approaches. Specifically, we have added a new comparison table (Table~I) that categorizes and contrasts representative methods across three paradigms: (1)~analytical and NWP-based altitude harmonization (e.g., Baro-ARAIM~\cite{simonetti2024geodetic}, BiG-C~\cite{narayanan2022enhanced}, NWP Correction~\cite{schumann2017use}); (2)~data-driven barometric calibration methods (e.g., ensemble learning~\cite{zhang2020urban}, deep learning~\cite{chen2022deep}); and (3)~neural field-based spatial representation techniques. The table compares these methods across dimensions including input modalities, altitude accuracy, spatial resolution, and generalization capability, clearly positioning our contribution within the existing literature.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added Table~I: ``Comparison of Urban Altitude Estimation Methods'' to the Related Work section (Section~II), providing a structured comparison of analytical, data-driven, and neural field approaches (Page~2).
+    \item Expanded the discussion in Section~II-B (Data-Driven Calibration) with additional references on deep learning-based sensor calibration~\cite{huang2022mems, duan2025accurate}.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 2
+\begin{cmtone}{}{}
+2. Regarding the ``black box'' nature of traditional machine learning methods, how does the proposed method specifically improve model generalization? Please provide a brief explanation based on the model architecture illustrated in Fig.~3.
+
+\end{cmtone}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for this insightful question. The fundamental reason traditional ML methods fail to generalize to unseen sensors is that they learn \emph{sensor-specific} mappings that entangle hardware bias with environmental corrections. Our PINF architecture (Fig.~3 in the manuscript) addresses this through three complementary mechanisms:
+
+\textbf{(1) Physics-Derived Pressure Bias Feature} ($P_{\text{bias}} = P_{\text{obs}} - P_{\text{expected}}$): Unlike learned sensor embeddings that memorize per-device identifiers, this feature computes a \emph{physically interpretable} discrepancy between the observed pressure and the theoretically expected pressure at the sensor's true GNSS altitude. This single scalar mathematically isolates the lumped sensor-specific hardware offset from the spatial environmental model. As shown in our ablation study (Table~IV, Setup~B), this reformulation alone reduces the LOSO MAE from 22.21\,m (direct $\Delta h$ prediction) to 9.27\,m, a 58.3\% improvement, proving that the pressure-domain formulation successfully decouples hardware biases from the spatial correction field.
+
+\textbf{(2) Hypsometric Equation as a Differentiable Layer}: Rather than predicting heights directly, our network predicts a pressure correction $\delta P$, which is then passed through the physically grounded hypsometric equation (Eq.~6 in the manuscript) to compute the final height. This ensures that all predictions inherently respect atmospheric physics---gradients are computed \emph{through} the physical model via backpropagation, enforcing strict physical compliance on the neural weights.
+
+\textbf{(3) Multi-Resolution Hash Encoding}: The hash encoding captures spatial correlations at multiple scales (from city-wide barometric gradients to street-level microclimate effects) using $\mathcal{O}(1)$ feature lookup, enabling the model to generalize across spatially heterogeneous urban topologies without memorizing specific sensor locations.
+
+Together, these mechanisms ensure that the network learns a \emph{universal spatial correction field} rather than device-specific lookup tables, which is why it achieves 3.55\,m MAE on completely unseen, uncalibrated hardware under strict LOSO validation.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Enhanced the explanation in Section~III-C (Physics-Derived Pressure Bias Feature) with an explicit comparison to learned sensor embeddings and a clearer articulation of why $P_{\text{bias}}$ enables zero-shot generalization.
+    \item Added a paragraph in Section~III-D linking the architecture components to generalization performance, referencing the ablation results.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 3
+\begin{cmtone}{}{}
+3. The comparative validation of the proposed method is primarily conducted against traditional machine learning approaches. It is suggested to include comparisons with more advanced methods to more comprehensively evaluate the model's generalization performance.
+
+\end{cmtone}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We appreciate this suggestion and have substantially expanded our comparative evaluation in two dimensions: (1)~adding deep learning baselines to the main comparison table, and (2)~adding a SOTA comparison with published methods.
+
+\textbf{Deep Learning Baselines (New in Table~II):}
+To directly address the reviewer's concern, we have implemented and evaluated four representative deep learning methods under the same strict 8-fold LOSO protocol:
+
+\begin{table}[h]
+\centering
+\caption{Extended Baseline Comparison with Deep Learning Methods (8-Fold LOSO)}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{MAE (m)} & \textbf{Std (m)} & \textbf{Category} \\
+\midrule
+IDW \cite{shepard1968two} & 37.50 & 3.93 & Geostatistical \\
+Ordinary Kriging \cite{cressie1993statistics} & 37.35 & 4.35 & Geostatistical \\
+Random Forest \cite{breiman2001random} & 64.82 & 8.68 & Traditional ML \\
+XGBoost \cite{chen2016xgboost} & 65.09 & 7.96 & Traditional ML \\
+\midrule
+Plain MLP (ReLU, $\Delta h$) & 47.05 & 47.13 & Deep Learning \\
+SIREN MLP ($\Delta h$) \cite{sitzmann2020implicit} & 22.21 & 18.39 & Deep Learning \\
+Hash-SIREN ($\delta P$, no $P_{\text{bias}}$) & 20.83 & 7.89 & Deep Learning \\
+TabNet \cite{arik2021tabnet} & 59.41 & 9.44 & Deep Learning \\
+\midrule
+Physics Baseline & 36.96 & 4.04 & --- \\
+\midrule
+\textbf{PINF (Ours)} & \textbf{3.55} & \textbf{1.23} & \textbf{Physics-Neural} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a clear hierarchy that provides strong evidence for our design choices:
+\begin{enumerate}
+    \item \textbf{Traditional ML and TabNet} (59--65\,m): Both RF/XGBoost and TabNet (a state-of-the-art attention-based tabular architecture) catastrophically fail on unseen hardware. TabNet's 59.41\,m MAE proves that even sophisticated deep learning cannot overcome hardware bias memorization without architectural countermeasures.
+    \item \textbf{Plain MLP} (47.05\,m): A standard neural network predicting $\Delta h$ directly also fails, confirming that the problem lies in the formulation, not just the model capacity.
+    \item \textbf{SIREN MLP} (22.21\,m): SIREN activations improve over plain MLP but still cannot decouple hardware biases from environmental corrections when predicting heights directly.
+    \item \textbf{Hash-SIREN without $P_{\text{bias}}$} (20.83\,m): Using hash encoding and the $\delta P$ pressure formulation (without the physics-derived bias feature) achieves the best DL baseline. This isolates the critical contribution of $P_{\text{bias}}$---removing it degrades performance from 3.55\,m to 20.83\,m.
+    \item \textbf{PINF (Ours)} (3.55\,m): The full framework with $P_{\text{bias}}$ + hash encoding + SIREN + curriculum learning achieves an order-of-magnitude improvement over all baselines.
+\end{enumerate}
+
+\textbf{SOTA Comparison (Table~V):}
+We have also added a comparison with published altitude estimation methods:
+
+\begin{table}[h]
+\centering
+\caption{Comparison with State-of-the-Art Methods}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{MAE (m)} & \textbf{Evaluation} & \textbf{Generalizes} \\
+\midrule
+Baro-ARAIM \cite{simonetti2024geodetic} & 4--30 & Variable & Unknown \\
+BiG-C \cite{narayanan2022enhanced} & ${\sim}10$ & Random split & Unknown \\
+NWP Correction \cite{schumann2017use} & 5--15 & Regional & Limited \\
+\midrule
+\textbf{PINF (Ours)} & \textbf{3.55} & \textbf{8-fold LOSO} & \textbf{Verified} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A critical distinction is that our LOSO protocol is \emph{strictly harder} than random-split evaluations used in prior work. Under random splits, data from the same sensor leaks into both training and test sets. Our LOSO protocol explicitly tests on entirely unseen hardware at unseen locations, which is the operational requirement for real-world deployment. No prior method has demonstrated verified zero-shot generalization to unseen hardware.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added 4 deep learning baselines (Plain MLP, SIREN, Hash-SIREN, TabNet) to Table~II with full per-fold LOSO results.
+    \item Added Table~V: ``Comparison with State-of-the-Art Methods'' in Section~IV, comparing with Baro-ARAIM, BiG-C, and NWP Correction.
+    \item Expanded the analysis in Section~IV-B with a detailed discussion of why DL baselines fail and how the hierarchy validates our design choices.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 4
+\begin{cmtone}{}{}
+4. The average MAE in Table 3 is quite low, but are there occasional ``spike errors'' that could exceed the safety margin for flight altitude? Please supplement the analysis with an error distribution and briefly explain the differences in MAE across different folds.
+
+\end{cmtone}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for raising this important operational concern. To address it comprehensively, we have conducted a detailed per-sample error distribution analysis by running inference with all 8 trained LOSO model checkpoints on their respective held-out sensors, yielding per-sample prediction errors for the entire dataset of $N = 134{,}627$ samples.
+
+\textbf{Error Distribution Analysis:}
+As shown in the newly generated Fig.~R1, the error distribution exhibits a striking bimodal pattern---the model is highly accurate for the vast majority of samples, with a small subset of outlier predictions that inflate the aggregate MAE:
+
+\begin{table}[h]
+\centering
+\caption{Comprehensive Error Statistics Across All 8 LOSO Folds ($N = 134{,}627$)}
+\begin{tabular}{lc|lc}
+\toprule
+\textbf{Statistic} & \textbf{Value} & \textbf{Statistic} & \textbf{Value} \\
+\midrule
+Median $|error|$ & 0.04\,m & Mean MAE & 3.55\,m \\
+P90 $|error|$ & 14.91\,m & Std MAE & 1.23\,m \\
+P95 $|error|$ & 25.49\,m & Max $|error|$ & 128.39\,m \\
+P99 $|error|$ & 42.33\,m & Mean signed error & +1.56\,m \\
+\midrule
+\multicolumn{4}{c}{\textit{Fraction of predictions below threshold}} \\
+\midrule
+$< 1$\,m & 78.9\% & $< 5$\,m & 83.6\% \\
+$< 10$\,m & 86.8\% & $< 20$\,m & 92.7\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Key observations:
+\begin{itemize}
+    \item \textbf{Majority accuracy}: 78.9\% of all predictions achieve sub-meter accuracy, with a median absolute error of only 0.04\,m. This confirms that the model has learned the spatial pressure correction field with very high precision for the majority of the operational envelope.
+    \item \textbf{Spike errors exist but are localized}: The P90 of 14.91\,m and P95 of 25.49\,m indicate that approximately 10--15\% of samples exhibit larger deviations. The maximum single-sample error is 128.39\,m. Our analysis shows these spike errors are concentrated in specific temporal windows (likely corresponding to abrupt microclimate transitions or transient sensor disturbances) rather than being uniformly distributed.
+    \item \textbf{Positive bias}: The mean signed error of +1.56\,m indicates a slight systematic overestimation, which is expected given the pressure correction formulation and the asymmetry introduced by the logarithmic hypsometric equation.
+\end{itemize}
+
+\textbf{Operational Safety Assessment:}
+While the maximum spike error (128.39\,m) is substantial, it represents an extreme outlier (P99 = 42.33\,m). For operational U-space traffic management, two mitigation strategies are available: (1)~the ensemble uncertainty quantification presented in Section~IV-E can flag high-uncertainty predictions for rejection, and (2)~temporal filtering (e.g., moving average over multiple consecutive readings) would substantially suppress transient spike errors while preserving the sub-meter baseline accuracy.
+
+\textbf{Fold-to-Fold Variability Analysis:}
+The per-fold MAE ranges from 1.57\,m (Fold~3) to 4.85\,m (Fold~7). We attribute this variability primarily to three factors:
+\begin{enumerate}
+    \item \textbf{Altitude range and urban topology}: Fold~3 achieves the lowest MAE (1.57\,m) because the held-out sensor is located at moderate altitude with consistent surrounding training coverage. In contrast, Fold~7's sensor resides at a higher altitude boundary with sparser neighboring sensors, leading to greater extrapolation challenge.
+    \item \textbf{Local microclimate complexity}: Sensors in deep urban canyons experience more turbulent pressure fluctuations than those in open areas, introducing higher inherent noise variance in the test data.
+    \item \textbf{Hardware offset magnitude}: Different units have different static calibration offsets. Although our $P_{\text{bias}}$ feature normalizes these offsets, larger offsets can still introduce residual uncertainty.
+\end{enumerate}
+
+Despite this variability, the standard deviation of 1.23\,m across folds demonstrates exceptional metrological consistency, with \emph{all} folds achieving sub-5\,m MAE and over 67\% improvement over the physics baseline.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added Fig.~R1 showing: (a)~per-fold error box plot, (b)~CDF of absolute errors, (c)~error vs.\ altitude scatter with binned mean trend, and (d)~summary statistics table.
+    \item Added the comprehensive error statistics table (median, P90, P95, P99, fraction below threshold) to Section~IV-D.
+    \item Added an operational safety assessment paragraph discussing spike error mitigation via ensemble uncertainty and temporal filtering.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 5
+\begin{cmtone}{}{}
+5. The experiments in the paper utilize sampling from eight fixed points. Why not test along a continuous altitude trajectory? Analyzing the error curve against continuous altitude changes would more fully demonstrate the proposed method's performance.
+
+\end{cmtone}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for this valuable suggestion. We fully agree that continuous trajectory validation would provide additional evidence of the method's spatial continuity and operational robustness. We would like to clarify the reasoning behind our current experimental design and outline our plans for trajectory-based evaluation:
+
+\textbf{Rationale for Static Deployment:}
+The GeoBox V1 terminals used in this study were designed as proof-of-concept (PoC) validation instruments for stationary deployment. The primary objective was to establish metrological rigor by eliminating confounding factors (e.g., aerodynamic pressure disturbances from UAV motion, GPS multipath during flight). Static deployment enables:
+\begin{itemize}
+    \item \textbf{Controlled ground truth}: GNSS altitude accuracy is highest when stationary (typical CEP $< 2.5$\,m), providing reliable labels.
+    \item \textbf{Isolation of sensor biases}: Without dynamic pressure artifacts, the measured pressure offsets purely reflect hardware calibration and environmental microclimate effects.
+    \item \textbf{Long-term temporal coverage}: Each sensor collected data continuously for multiple days, capturing diurnal and weather-driven pressure variations that a single trajectory flight could not.
+\end{itemize}
+
+\textbf{Continuous Spatial Validation via Neural Field Reconstruction:}
+Although we have not yet tested along a physical flight trajectory, the spatial field reconstruction presented in Fig.~6 of the manuscript demonstrates that the PINF model produces a \emph{continuous} altitude field across the entire 1\,km$^2$ deployment zone. The model successfully reconstructs the steep 159\,m elevation gradient between the high-rise rooftop sensor (259\,m) and the street-level cluster (${\sim}95$--100\,m) as a smooth, physically interpretable spatial manifold, confirming that the neural field generalizes continuously across space rather than merely interpolating between discrete sensor locations.
+
+\textbf{Future Trajectory Validation with GeoBox V2:}
+We are currently developing GeoBox V2, which addresses the key limitations of V1 for mobile deployment: (1)~reduced weight compatible with UAV payload constraints, (2)~integrated power management for sustained flight operations, (3)~enhanced aerodynamic enclosure with pitot-static pressure compensation. Upon release, we plan to conduct systematic trajectory-based validation flights at multiple altitudes and speeds to directly evaluate the error profile along continuous altitude changes, which will be reported in follow-up work.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added a discussion in Section~V (Conclusion and Future Work) acknowledging continuous trajectory validation as a planned future experiment with GeoBox V2.
+    \item Added a brief note in Section~IV-A explaining the rationale for static deployment as a controlled metrological validation protocol.
+    \item Strengthened the spatial continuity argument in Section~IV-E with reference to the continuous neural field reconstruction shown in Fig.~6.
+\end{enumerate}

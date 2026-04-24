@@ -1,0 +1,43 @@
+\section{Introduction}
+\label{sec:intro}
+
+\IEEEPARstart{A}{ccurate} altitude estimation is fundamental to numerous applications including urban navigation, flood monitoring, aviation safety, and atmospheric research. While Global Navigation Satellite Systems (GNSS) provide horizontal positioning with meter-level accuracy, vertical positioning remains challenging in urban environments due to multipath effects and signal occlusion \cite{groves2013principles}.
+
+Barometric pressure sensors offer an attractive alternative for altitude estimation through the barometric formula:
+\begin{equation}
+h = -H_s \ln\left(\frac{P}{P_0}\right)
+\end{equation}
+where $H_s$ is the scale height, $P$ is the measured pressure, and $P_0$ is the sea-level reference pressure. However, this approach suffers from several limitations in urban environments:
+
+\begin{enumerate}
+    \item \textbf{Sensor-specific biases}: Different sensors exhibit systematic offsets (typically $-7$m to $+15$m)
+    \item \textbf{Microclimate variations}: Urban heat islands and building-induced pressure variations
+    \item \textbf{Weather effects}: Temporal pressure changes due to weather systems
+    \item \textbf{Height-dependent errors}: Extrapolation to unseen altitude ranges
+\end{enumerate}
+
+Traditional machine learning approaches (e.g., Random Forest) can partially address these issues but suffer from poor spatial generalization when deployed to new locations \cite{zhang2020urban}.
+
+\subsection{Related Work}
+
+\textbf{Barometric Altitude Estimation}: Conventional methods rely on the barometric formula with empirical corrections \cite{icao1993manual}. Recent work incorporates machine learning to learn sensor-specific biases, but these approaches typically achieve 10--30m accuracy \cite{zhang2020urban}.
+
+\textbf{Neural Fields}: Originally developed for neural rendering \cite{mildenhall2020nerf}, Neural Fields have shown promise for continuous spatial modeling. Instant-NGP \cite{muller2022instant} introduced hash-based spatial encoding that enables efficient learning of high-frequency details. However, Neural Fields have not been extensively explored for atmospheric parameter estimation.
+
+\textbf{Curriculum Learning}: First proposed by Bengio et al. \cite{bengio2009curriculum}, curriculum learning trains models on progressively harder examples. While effective for computer vision and NLP, its application to geospatial regression remains underexplored.
+
+\subsection{Contributions}
+
+This paper makes the following contributions:
+
+\begin{enumerate}
+    \item \textbf{First Neural Field approach for urban altitude estimation}: We demonstrate that Neural Fields with appropriate architectural choices can achieve sub-4-meter accuracy, surpassing traditional ML methods by over 50\%.
+    
+    \item \textbf{Multi-resolution hash encoding for spatial modeling}: We adapt Instant-NGP's hash encoding for atmospheric modeling, enabling efficient capture of multi-scale spatial patterns.
+    
+    \item \textbf{Curriculum learning strategy}: We propose a three-stage curriculum (easy $\rightarrow$ medium $\rightarrow$ hard) that improves convergence and final accuracy by 15--20\%.
+    
+    \item \textbf{Terrain-aware feature engineering}: We introduce sensor density, local roughness, and height ranking features that capture urban morphology effects.
+    
+    \item \textbf{Rigorous LOSO validation}: Unlike prior work using random splits, we employ strict Leave-One-Sensor-Out validation, ensuring our results reflect real-world deployment scenarios.
+\end{enumerate}

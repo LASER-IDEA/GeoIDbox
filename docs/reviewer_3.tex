@@ -1,0 +1,288 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Reviewer 3
+\newpage
+\section{Response to Reviewer 3}
+
+\subsection{Major Comments}
+
+%%%%%%%%%%%%% Comment 1
+\begin{cmtthree}{}{}
+The barometric altimetry is affected by microclimate variations, urban canyon effects, and uncalibrated low-cost sensor biases. this paper proposes a novel edge-sensing measurement framework comprising a custom multi-sensor IoT terminal and a physics-informed neural field algorithm integrating physical atmospheric constraints with multi-resolution hash encoding, a physics-derived pressure bias formulation, and an altitude aware curriculum learning strategy. Experiment verifies the proposed framework. However, there are some concerns need to be addressed as follows:
+
+1. The horizontal position is not important? Whether do you obtain position by GNSS receiver, but vertical is not high accurate. Or you only need vertical position? Please revise the abstract.
+
+\end{cmtthree}
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We sincerely thank the reviewer for this important clarification question. We acknowledge that the original abstract did not sufficiently distinguish between horizontal and vertical positioning, which may have caused confusion. Let us clarify the role of each positioning component:
+
+\textbf{Horizontal Position}: The GeoBox GNSS receiver provides horizontal coordinates (latitude $\phi$, longitude $\lambda$) with typical accuracy of ${\sim}1.5$\,m CEP under open-sky conditions. This accuracy is adequate for our framework because the horizontal position serves as a \emph{spatial index} for the neural field---it determines which spatial features to activate in the multi-resolution hash encoding. The horizontal accuracy of consumer-grade GNSS is well-studied and sufficient for this purpose.
+
+\textbf{Vertical Position --- The Core Challenge}: The central problem addressed by this paper is the \emph{vertical} dimension. Specifically, two fundamentally different vertical reference systems coexist in low-altitude operations:
+\begin{itemize}
+    \item \textbf{Barometric altitude}: Referenced to ISA Mean Sea Level, used by manned aviation, susceptible to sensor biases and microclimate disturbances.
+    \item \textbf{GNSS geometric altitude}: Referenced to the WGS-84 ellipsoid (or MSL for consumer receivers), used by UAS.
+\end{itemize}
+The discrepancy between these two systems can exceed hundreds of meters in urban environments, creating severe collision risks when heterogeneous traffic mixes. Our framework converts barometric altitude to a unified geometric height reference, effectively harmonizing the vertical channel across all airspace users.
+
+\textbf{GNSS Vertical Accuracy}: While it is true that GNSS vertical accuracy (${\sim}2.5$\,m) is lower than horizontal accuracy, it is more than sufficient for our purpose because GNSS altitude serves as the \emph{ground truth training label}, not the final operational output. The operational output is the corrected barometric altitude, which provides a continuous, real-time height reference that does not require GNSS connectivity.
+
+We have revised the abstract to make the vertical-only focus explicit and to clearly distinguish the roles of horizontal and vertical GNSS measurements.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Revised the abstract to explicitly state that the framework addresses \emph{vertical} positioning harmonization, with horizontal position serving as a spatial index rather than an estimation target.
+    \item Added a clarifying sentence in Section~I (Introduction): ``The horizontal coordinates provided by GNSS serve as spatial inputs for the neural field, while the core estimation target is the \emph{vertical} height conversion.''
+    \item Added a brief discussion in Section~III-A clarifying the respective roles of GNSS horizontal and vertical components in the framework.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 2
+\begin{cmtthree}{}{}
+2. Finally, whether GNSS receiver is used, Or only Temperature and atmospheric pressure sensors?
+
+\end{cmtthree}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for seeking this clarification. The GeoBox system uses \textbf{all three sensor types}, each serving a distinct and essential role:
+
+\textbf{During Training (with all sensors):}
+\begin{enumerate}
+    \item \textbf{GNSS receiver}: Provides the \textbf{ground truth altitude} $h_{\text{GNSS}}$ (the training label) and horizontal position $(\phi, \lambda)$ (the spatial coordinate for hash encoding).
+    \item \textbf{Barometric sensor}: Provides the \textbf{raw atmospheric pressure} $P_{\text{obs}}$ (the primary input to be corrected).
+    \item \textbf{Temperature \& humidity sensors}: Provide $T_{\text{obs}}$ and $RH$ for computing the virtual temperature $T_v$ in the hypsometric equation and as environmental features for the neural network.
+\end{enumerate}
+
+\textbf{During Inference (operational deployment):}
+Once the neural field is trained, the GeoBox infrastructure serves as a reference network. A new, uncalibrated sensor (e.g., a drone's onboard barometer) only needs to report:
+\begin{itemize}
+    \item Its barometric pressure $P_{\text{obs}}$
+    \item Its approximate horizontal position $(\phi, \lambda)$ from any source (GNSS, WiFi, cellular)
+    \item Its approximate altitude $h$ (from any rough estimate, including the barometric altitude itself)
+    \item Local temperature $T_{\text{obs}}$ and humidity $RH$
+\end{itemize}
+The trained PINF model then computes the physics-derived $P_{\text{bias}}$, predicts the pressure correction $\delta P$, and returns the corrected geometric height $h_{\text{pred}}$. Importantly, the inference sensor does \emph{not} need high-precision GNSS altitude---the neural field corrects the barometric reading to an accurate geometric height.
+
+This design is precisely what enables the zero-shot generalization demonstrated in our LOSO experiments: the held-out sensor has never been seen during training, yet the model accurately corrects its barometric readings to within 3.55\,m MAE.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added a clear ``Training vs.\ Inference'' distinction in Section~III-A, specifying which sensors are required at each stage.
+    \item Added a paragraph in Section~III-B explaining that GNSS provides the training label while barometric data provides the operational input.
+    \item Added a flow diagram (Fig.~R2) illustrating the training and inference pipelines and their respective sensor requirements.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 3
+\begin{cmtthree}{}{}
+3. How many datasets are used for training and finetune?
+
+\end{cmtthree}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for this question. We use a \textbf{single dataset} with a rigorous cross-validation protocol. There is no separate fine-tuning phase---this is a key feature of our zero-shot generalization framework. The complete details are as follows:
+
+\textbf{Dataset:}
+\begin{itemize}
+    \item \textbf{Source}: A single, continuous field deployment of 8 GeoBox sensors in Shenzhen, China.
+    \item \textbf{Total samples}: $N = 134{,}627$ synchronized multi-sensor readings.
+    \item \textbf{Spatial coverage}: ${\sim}1\;\text{km}^2$, encompassing ground-level to mid-rise rooftop installations.
+    \item \textbf{Altitude range}: 59--322\,m above sea level.
+    \item \textbf{Sampling frequency}: 1\,Hz raw, aggregated to 1-minute intervals for transmission.
+\end{itemize}
+
+\textbf{8-Fold LOSO Protocol:}
+In each fold, the dataset is divided as follows:
+\begin{itemize}
+    \item \textbf{Training set}: Data from 7 sensors (${\sim}117{,}000$ samples), further split into 85\% training and 15\% validation for early stopping.
+    \item \textbf{Test set}: Data from the held-out 8th sensor (${\sim}15{,}000$--$19{,}000$ samples, depending on the fold).
+\end{itemize}
+
+\textbf{No Fine-Tuning}:
+Critically, the model is trained \emph{from scratch} in each fold with randomly initialized weights. The held-out sensor's data is never used during training, validation, or hyperparameter selection. This ``train from scratch, test on unseen hardware'' protocol is precisely what validates zero-shot generalization. If the model required fine-tuning on the test sensor, it would not constitute zero-shot transfer.
+
+\textbf{Curriculum Learning Splits}:
+Within each fold's training set, the three-stage curriculum strategy allocates data as follows:
+\begin{itemize}
+    \item \textbf{Stage 1} (30 epochs): ${\sim}30\%$ of training data (altitude $< 100$\,m)
+    \item \textbf{Stage 2} (30 epochs): ${\sim}84\%$ of training data (altitude $< 200$\,m)
+    \item \textbf{Stage 3} (80 epochs): 100\% of training data (all altitudes)
+\end{itemize}
+
+The total training budget is 140 epochs per fold, with early stopping (patience = 25 epochs) based on validation MAE.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Expanded Table~I (Dataset Statistics) with altitude range, sampling frequency, and per-fold sample counts.
+    \item Added an explicit statement in Section~IV-B: ``Each fold trains from scratch with random initialization; no fine-tuning is performed on the held-out sensor.''
+    \item Added curriculum split statistics (percentage and sample counts for each stage) in Section~III-D.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 4
+\begin{cmtthree}{}{}
+4. Experimental description is too simple. Please show the experimental process and results in detail. No matter what season and weather it can be used?
+
+\end{cmtthree}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for this feedback. We have substantially expanded the experimental description in the revised manuscript. Below we provide both the detailed experimental process and a candid discussion of seasonal/weather robustness.
+
+\textbf{Detailed Experimental Process:}
+\begin{enumerate}
+    \item \textbf{Deployment}: Eight GeoBox V1 terminals were deployed across a ${\sim}1\;\text{km}^2$ urban area in Shenzhen, China. The deployment included:
+    \begin{itemize}
+        \item 3 sensors at ground/street level (altitude ${\sim}59$--$100$\,m)
+        \item 3 sensors on mid-rise building rooftops (altitude ${\sim}100$--$200$\,m)
+        \item 2 sensors on high-rise structures (altitude $>200$\,m)
+    \end{itemize}
+    \item \textbf{Data Collection}: Each sensor continuously recorded synchronized GNSS position, barometric pressure, temperature, and humidity at 1\,Hz, aggregated to 1-minute intervals. Data was transmitted via 4G/MQTT to a central server.
+    \item \textbf{Quality Filtering}: Raw data underwent quality checks including GNSS fix validation (minimum satellite count, PDOP threshold), pressure range validation (300--1100\,hPa), and outlier removal.
+    \item \textbf{Physics Baseline Computation}: The hypsometric equation was applied to all samples using measured temperature, humidity, and a global reference pressure $P_{\text{ref}}$ computed from ERA5 reanalysis data.
+    \item \textbf{LOSO Training}: For each of the 8 folds, the PINF model was trained from scratch with curriculum learning (140 total epochs), using the AdamW optimizer with cosine annealing learning rate scheduling.
+    \item \textbf{Evaluation}: The trained model was evaluated on the held-out sensor, computing MAE, RMSE, and improvement over the physics baseline.
+\end{enumerate}
+
+\textbf{Seasonal and Weather Robustness:}
+Our framework incorporates several mechanisms that provide inherent weather adaptability:
+\begin{itemize}
+    \item The physics baseline explicitly accounts for temperature, humidity, and pressure through the virtual temperature formulation.
+    \item The temporal Fourier encoding captures periodic atmospheric patterns.
+    \item The measured environmental parameters ($T_{\text{obs}}$, $RH$) are directly provided as input features.
+\end{itemize}
+
+However, we must candidly acknowledge that our current dataset does \emph{not} span all four seasons or extreme weather events. The data was collected over multiple days, capturing normal diurnal variations but not seasonal extremes (e.g., summer heat islands, winter temperature inversions, typhoon conditions). We do not claim universal weather independence. Instead, we position our current work as a validated framework and proof of concept, with the following planned extensions:
+\begin{enumerate}
+    \item \textbf{Multi-season deployment}: We are preparing an extended 12-month data collection campaign with the current GeoBox network.
+    \item \textbf{GeoBox V2 integration}: The next-generation hardware adds real-time wind vector measurement and an aerodynamic pressure compensation module, which will enable more robust operation under extreme weather.
+    \item \textbf{Online adaptation}: Future work will explore continual learning strategies that allow the neural field to adapt to seasonal shifts without full retraining.
+\end{enumerate}
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Expanded Section~IV-A with detailed deployment configuration, data collection protocol, and quality filtering pipeline.
+    \item Added a new table (Table~I-bis) with sensor deployment details including altitude, location type, and sample counts.
+    \item Added a ``Limitations'' paragraph in Section~V explicitly discussing seasonal and weather coverage, with concrete plans for extended validation.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 5
+\begin{cmtthree}{}{}
+5. Comparison experiments are needed correctly, your compare experiments are negative effect for positioning. Whether they are correct? whether others did it. Please compare them, based on the others' paper.
+
+\end{cmtthree}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for this important question. We understand the concern that seeing RF and XGBoost perform \emph{worse} than the physics baseline may appear counterintuitive or suspicious. We confirm that these results are \textbf{correct} and, in fact, represent one of the key findings of our paper.
+
+\textbf{Why Conventional ML Degrades Under LOSO:}
+Under random data splits, RF and XGBoost typically achieve very low MAE ($<1$\,m) because they memorize the sensor-specific hardware biases present in the training data. However, under our strict LOSO protocol, the test sensor is a completely unseen hardware unit. The tree-based models have learned to associate specific geographic regions with specific hardware offsets---when tested on an unseen sensor at a new location, they incorrectly apply the memorized offsets from training sensors, producing predictions that are \emph{worse} than doing nothing (i.e., the raw physics baseline). Specifically:
+\begin{itemize}
+    \item The pressure bias $P_{\text{bias}}$ is dominated by per-sensor hardware offsets (${\sim}30$--$40$\,m equivalent).
+    \item RF/XGBoost treat this as a standard regression problem over geographic features, but geographic features alone cannot recover hardware-specific offsets for unseen devices.
+    \item This results in systematic bias on the test sensor, degrading MAE to 64--65\,m (worse than the 36.96\,m baseline).
+\end{itemize}
+
+This finding is consistent with the well-known problem of distribution shift in machine learning: models that excel on in-distribution test data can catastrophically fail under even moderate covariate shifts. Our LOSO protocol exposes this failure mode, which random splits conceal.
+
+\textbf{Comparison with Published Results:}
+In the revised manuscript, we have added a SOTA comparison table referencing published results from other groups:
+
+\begin{table}[h]
+\centering
+\caption{Comparison with Published Methods}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{MAE (m)} & \textbf{Evaluation} & \textbf{Generalizes} \\
+\midrule
+Baro-ARAIM \cite{simonetti2024geodetic} & 4--30 & Variable & Unverified \\
+BiG-C \cite{narayanan2022enhanced} & ${\sim}10$ & Random split & Unverified \\
+NWP Correction \cite{schumann2017use} & 5--15 & Regional & Limited \\
+Zhang et al. \cite{zhang2020urban} & 10--30 & Random split & Unverified \\
+\midrule
+\textbf{PINF (Ours)} & \textbf{3.55} & \textbf{8-fold LOSO} & \textbf{Verified} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We note that direct numerical comparison is inherently limited because: (1)~prior methods were evaluated on different datasets with different sensor configurations, and (2)~no prior work has reported results under a strict LOSO protocol. Our 3.55\,m MAE under LOSO should be understood as a \emph{lower bound} on what random-split evaluation would yield---random splits would likely produce even lower MAE for our method, but at the cost of being operationally meaningless.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Added an explicit explanation in Section~IV-B for why conventional ML baselines degrade under LOSO, framed as a key finding rather than a limitation.
+    \item Added Table~V comparing our results with published methods, with proper discussion of evaluation protocol differences.
+    \item Added references to the machine learning literature on distribution shift to contextualize the RF/XGBoost degradation.
+\end{enumerate}
+
+\newpage
+
+%%%%%%%%%%%%% Comment 6
+\begin{cmtthree}{}{}
+6. Some descriptions are repeated, such as Fig.~4 and Table~II, Fig.~5 and Table~IV.
+
+\end{cmtthree}
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Response:}}
+\vspace{0.2cm}
+
+We thank the reviewer for identifying this redundancy. We agree that figures and their corresponding tables should each contribute unique information rather than repeating the same data. In the revised manuscript, we have restructured the presentation as follows:
+
+\textbf{Fig.~4 (Baseline Comparison) and Table~II:}
+\begin{itemize}
+    \item \textbf{Table~II} now presents the precise numerical values (MAE, Std, Improvement) for reproducibility and quantitative comparison.
+    \item \textbf{Fig.~4} has been redesigned to emphasize the \emph{relative performance ranking} and the dramatic gap between conventional methods and PINF, with error bars highlighting the variance across folds. The figure caption now provides qualitative analysis rather than repeating exact numbers.
+\end{itemize}
+
+\textbf{Fig.~5 (Ablation Waterfall) and Table~IV:}
+\begin{itemize}
+    \item \textbf{Table~IV} provides the complete ablation statistics with numerical precision and the associated footnotes explaining each configuration.
+    \item \textbf{Fig.~5} has been updated as a waterfall chart that visually emphasizes the \emph{incremental contribution} of each component (the ``drop'' between successive configurations), rather than simply restating the absolute values. The caption now focuses on the analytical narrative---how the synergy between $P_{\text{bias}}$ and curriculum learning drives the final improvement.
+\end{itemize}
+
+Additionally, we have reviewed the entire manuscript to eliminate other instances of redundancy between figures and tables. Where a figure and table present the same data, we now ensure that: (1)~the table provides precise numerical reference, and (2)~the figure provides visual insight (trends, rankings, distributions) that cannot be easily extracted from the table alone.
+
+\vspace{0.1cm}
+\noindent
+\underline{\textbf{Paper Revision:}}
+
+\begin{enumerate}
+    \item Redesigned Fig.~4 caption to focus on qualitative analysis and relative performance rather than repeating exact MAE values.
+    \item Redesigned Fig.~5 as a waterfall chart emphasizing incremental contributions rather than absolute values.
+    \item Conducted a full manuscript review to eliminate redundant descriptions between all figure--table pairs.
+    \item Added explicit cross-references (e.g., ``As detailed numerically in Table~II, the visualization in Fig.~4 reveals\ldots'') to clarify the complementary roles of each element.
+\end{enumerate}

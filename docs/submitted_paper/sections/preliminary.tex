@@ -1,0 +1,14 @@
+\section{Preliminary}
+\label{sec:preliminary}
+\subsection{Geodetic and Orthometric Height}
+First, we clarify the geometric relationship between different vertical datums. The GNSS module measures the Geometric Altitude ($h$), defined as the height above the WGS-84 reference ellipsoid1. However, aviation and barometric systems operate relative to the Geoid (approximated by Mean Sea Level, MSL). The Orthometric Height ($H$) is related to $h$ by the Geoid Undulation ($N(\phi, \lambda)$):
+$$H \approx h - N(\phi, \lambda) \ , $$
+where $(\phi, \lambda)$ represents latitude and longitude. The undulation $N$ can vary significantly (e.g., -105m to +85m globally). In our framework, $N$ is retrieved from the EGM96/EGM2008 gravity model to align the geometric and geopotential frames.
+
+\subsection{The Hydrostatic Atmosphere Model}
+The fundamental physical law governing the relationship between pressure $P$ and geopotential height $H$ is the hydrostatic equation:$$\frac{dP}{dH} = -\rho g$$By incorporating the ideal gas law $\rho = \frac{P}{R_\text{dry} T_\text{v}}$, where $R_\text{dry}$ is the specific gas constant for dry air and $T_\text{v}$ is the virtual temperature (correcting for humidity effects), we derive the Hypsometric Equation:
+$$H(P) = H_\text{ref} + \frac{R_\text{dry} \bar{T}_\text{v}}{g_0} \ln\left(\frac{P_\text{ref}}{P}\right) \ ,$$
+where $P_\text{ref}$ and $H_\text{ref}$ are values at a reference level (e.g., ground level).
+
+\subsection{The Residual Problem}
+While NWP models (like ERA5) provide baseline estimations for $T_\text{v}$ and $P_\text{ref}$, they fail to capture micro-scale disturbances in urban canyons (e.g., heat islands, building wake turbulence) due to coarse grid resolution (>20km). We define the Height Residual ($R_{\Delta}$) as the discrepancy between the GNSS-measured true height and the physics-derived height:$$h_{GNSS} = \mathcal{F}_{phy}(P_{obs}, T_{obs}, \text{NWP}) + R_{\Delta}(x, y, z, t)$$The goal of our methodology is to model this continuous residual field $R_{\Delta}$.
