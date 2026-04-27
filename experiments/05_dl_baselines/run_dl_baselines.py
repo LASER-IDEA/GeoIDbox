@@ -39,12 +39,13 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def pressure_bias_to_height_m(p_bias_pred, p_obs, t_celsius, rh, p_ref):
+    p_corrected = p_obs - p_bias_pred
     e_sat = 610.94 * np.exp(17.625 * t_celsius / (t_celsius + 243.04))
     e = (rh / 100.0) * e_sat
-    r = 0.62198 * e / (p_obs + p_bias_pred - e)
+    r = 0.62198 * e / (p_corrected - e)
     t_v = (t_celsius + 273.15) * (1 + 0.608 * r)
     H = R_DRY_AIR * t_v / G_STANDARD
-    h_pred = H * np.log(p_ref / (p_obs + p_bias_pred))
+    h_pred = H * np.log(p_ref / p_corrected)
     return h_pred
 
 

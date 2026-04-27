@@ -30,7 +30,7 @@ import matplotlib.patheffects as pe
 import warnings
 warnings.filterwarnings('ignore')
 
-sys.path.insert(0, '/data/home/huxiao/workspace/GeoIDbox')
+sys.path.insert(0, '/data/home/huxiao/workspace/job-done/GeoIDbox')
 
 from height_field_project.physics_baseline import compute_physics_baseline
 from height_field_project.train_generalized_with_bias import (
@@ -45,6 +45,17 @@ G_STANDARD = 9.80665
 N_ENSEMBLE = 5
 ENSEMBLE_DIR = 'experiments/04_uncertainty_map'
 FIG_DIR      = 'experiments/figures'
+
+SENSOR_ID_MAP = {
+    '20240606181851A641973A1878250224': '4197',
+    '20240606185609A190219A4811437779': '9021',
+    '20240606201439A160695A3816948226': '6069',
+    '20240911193046A806593A5642508217': '0659',
+    '20240911193519A117375A6331369164': '1737',
+    '20240911193733A012843A9994605977': '1284',
+    '20240911194312A389747A0782527426': '8974',
+    '20240911194957A179458A3827373510': '7945',
+}
 
 
 def build_model():
@@ -220,9 +231,9 @@ def plot_publication_map(sens, grid_lats, grid_lons, height_grid):
 
     # Per-sensor annotation offsets: (dlon, dlat)
     _offsets = {
-        '527426': ( 0.00040,  0.00090),  # north
-        '605977': ( -0.00150,  0.00000),  # east
-        '250224': ( 0.00040, -0.00090),  # south
+        '8974': ( 0.00040,  0.00090),  # north
+        '1284': ( -0.00150,  0.00000),  # east
+        '4197': ( 0.00040, -0.00090),  # south
     }
 
     for _, row in sens.iterrows():
@@ -381,13 +392,14 @@ def main():
     per_sensor_lat  = df.groupby('uid')['avg_latitude'].mean()
     per_sensor_lon  = df.groupby('uid')['avg_longitude'].mean()
 
+    uid_values = per_sensor_pred.index.astype(str)
     sens = pd.DataFrame({
-        'uid':      per_sensor_pred.index,
+        'uid':      uid_values,
         'lat':      per_sensor_lat.values,
         'lon':      per_sensor_lon.values,
         'alt_gnss': per_sensor_gnss.values,
         'h_pred':   per_sensor_pred.values,
-        'label':    [u[-6:] for u in per_sensor_pred.index],
+        'label':    [SENSOR_ID_MAP.get(u, u[-6:]) for u in uid_values],
     })
 
     print("\nPer-sensor summary:")

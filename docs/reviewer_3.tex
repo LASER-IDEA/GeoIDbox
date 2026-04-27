@@ -204,17 +204,42 @@ However, we must candidly acknowledge that our current dataset does \emph{not} s
 \underline{\textbf{Response:}}
 \vspace{0.2cm}
 
-We thank the reviewer for this important question. We understand the concern that seeing RF and XGBoost perform \emph{worse} than the physics baseline may appear counterintuitive or suspicious. We confirm that these results are \textbf{correct} and, in fact, represent one of the key findings of our paper.
+We thank the reviewer for this important question. We understand the concern that the baseline comparison results may appear counterintuitive. We confirm that all results are \textbf{correct} and have been re-verified after fixing a sign error in our evaluation code (see below). The results reveal a nuanced hierarchy that provides strong evidence for our physics-informed formulation.
 
-\textbf{Why Conventional ML Degrades Under LOSO:}
-Under random data splits, RF and XGBoost typically achieve very low MAE ($<1$\,m) because they memorize the sensor-specific hardware biases present in the training data. However, under our strict LOSO protocol, the test sensor is a completely unseen hardware unit. The tree-based models have learned to associate specific geographic regions with specific hardware offsets---when tested on an unseen sensor at a new location, they incorrectly apply the memorized offsets from training sensors, producing predictions that are \emph{worse} than doing nothing (i.e., the raw physics baseline). Specifically:
-\begin{itemize}
-    \item The pressure bias $P_{\text{bias}}$ is dominated by per-sensor hardware offsets (${\sim}30$--$40$\,m equivalent).
-    \item RF/XGBoost treat this as a standard regression problem over geographic features, but geographic features alone cannot recover hardware-specific offsets for unseen devices.
-    \item This results in systematic bias on the test sensor, degrading MAE to 64--65\,m (worse than the 36.96\,m baseline).
-\end{itemize}
+\textbf{Corrected Results and Hierarchy:}
+During our rebuttal preparation, we discovered and fixed a sign error in the \texttt{bias\_to\_height()} function used for baseline evaluation. The corrected 8-fold LOSO results show the following hierarchy:
 
-This finding is consistent with the well-known problem of distribution shift in machine learning: models that excel on in-distribution test data can catastrophically fail under even moderate covariate shifts. Our LOSO protocol exposes this failure mode, which random splits conceal.
+\begin{table}[h]
+\centering
+\caption{Corrected Baseline Comparison (8-Fold LOSO)}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{MAE (m)} & \textbf{vs.\ Physics Baseline} & \textbf{Category} \\
+\midrule
+Physics Baseline & 36.96 & --- & Reference \\
+\midrule
+IDW & 36.66 & $-0.8\%$ & Geostatistical \\
+Ordinary Kriging & 37.62 & $+1.8\%$ & Geostatistical \\
+Random Forest & 28.75 & $-22.2\%$ & Traditional ML \\
+XGBoost & 30.35 & $-17.9\%$ & Traditional ML \\
+Plain MLP & 47.05 & $+27.3\%$ & Deep Learning \\
+SIREN MLP & 22.21 & $-39.9\%$ & Deep Learning \\
+Hash-SIREN (no $P_{\text{bias}}$) & 61.00 & $+65.0\%$ & Deep Learning \\
+TabNet & 29.81 & $-19.3\%$ & Deep Learning \\
+\midrule
+\textbf{PINF (Ours)} & \textbf{3.55} & \textbf{$-$90.4\%} & \textbf{Physics-Neural} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several findings are noteworthy:
+
+\begin{enumerate}
+    \item \textbf{Traditional ML shows limited improvement}: RF (28.75\,m) and XGBoost (30.35\,m) improve ${\sim}20\%$ over the physics baseline (36.96\,m), confirming they can capture \emph{some} spatial patterns. However, this improvement is far from operationally useful, and our random-split experiment (Table~VI) reveals that these methods achieve 10--13\,m under random splits---a \textbf{2.4--2.8$\times$ degradation} under LOSO, proving sensor-specific memorization.
+    \item \textbf{Deep learning without proper formulation fails catastrophically}: Hash-SIREN (61.00\,m) and Plain MLP (47.05\,m) perform \emph{worse} than the physics baseline, confirming that increased model capacity without the correct physics-derived formulation actually harms generalization.
+    \item \textbf{SIREN MLP is the best DL baseline} (22.21\,m) but still degrades 5.5$\times$ from random-split MAE of 4.02\,m.
+    \item \textbf{PINF achieves genuine zero-shot transfer}: At 3.55\,m, our method is 8$\times$ better than the best conventional baseline (RF, 28.75\,m) under the same strict LOSO protocol.
+\end{enumerate}
 
 \textbf{Comparison with Published Results:}
 In the revised manuscript, we have added a SOTA comparison table referencing published results from other groups:
@@ -236,16 +261,17 @@ Zhang et al. \cite{zhang2020urban} & 10--30 & Random split & Unverified \\
 \end{tabular}
 \end{table}
 
-We note that direct numerical comparison is inherently limited because: (1)~prior methods were evaluated on different datasets with different sensor configurations, and (2)~no prior work has reported results under a strict LOSO protocol. Our 3.55\,m MAE under LOSO should be understood as a \emph{lower bound} on what random-split evaluation would yield---random splits would likely produce even lower MAE for our method, but at the cost of being operationally meaningless.
+We note that direct numerical comparison is inherently limited because: (1)~prior methods were evaluated on different datasets with different sensor configurations, and (2)~no prior work has reported results under a strict LOSO protocol. Our 3.55\,m MAE under LOSO should be understood as a conservative estimate---random splits would likely produce even lower MAE for our method, but at the cost of being operationally meaningless. The random-split experiment in Table~VI shows that all conventional methods inflate 1.9--5.5$\times$ when data from the same sensor leaks into both training and test sets.
 
 \vspace{0.1cm}
 \noindent
 \underline{\textbf{Paper Revision:}}
 
 \begin{enumerate}
-    \item Added an explicit explanation in Section~IV-B for why conventional ML baselines degrade under LOSO, framed as a key finding rather than a limitation.
+    \item Updated Table~II with corrected LOSO results and added 4 deep learning baselines.
+    \item Added an explicit discussion in Section~IV-B analyzing the baseline hierarchy and why DL methods fail without $P_{\text{bias}}$.
     \item Added Table~V comparing our results with published methods, with proper discussion of evaluation protocol differences.
-    \item Added references to the machine learning literature on distribution shift to contextualize the RF/XGBoost degradation.
+    \item Added Table~VI (Random-Split vs.\ LOSO) demonstrating that all conventional methods exhibit 1.9--5.5$\times$ degradation under LOSO, proving sensor-specific memorization.
 \end{enumerate}
 
 \newpage

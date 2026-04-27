@@ -45,16 +45,20 @@ Sampling frequency & 1\,min (aggregated) \\
 
 Evaluating spatial altitude models using random data splits inevitably leads to data leakage and artificially overestimates performance due to temporal and spatial autocorrelation. To rigorously validate the system's metrological reliability and its capability to achieve true zero-shot generalization across uncalibrated hardware, we employ a strict \textbf{8-fold LOSO cross-validation} protocol. In each cross-validation fold, the neural field is trained exclusively on the spatial domain of 7 sensors and evaluated entirely on the unseen geographic location and uncalibrated hardware of the held-out sensor.
 
-To contextualize the performance, our framework is benchmarked against both classical geostatistical methods and modern machine learning baselines:
+To contextualize the performance, our framework is benchmarked against classical geostatistical methods, traditional machine learning, and modern deep learning baselines:
 \begin{enumerate}
     \item \textbf{Physics Baseline}: The deterministic hypsometric equation without neural residual compensation.
     \item \textbf{IDW (Inverse Distance Weighting)}~\cite{shepard1968two}: Classical spatial interpolation of the physical pressure bias field, where the correction at each query point is computed as a weighted average of neighboring sensor biases, with weights inversely proportional to distance.
     \item \textbf{Ordinary Kriging}~\cite{cressie1993statistics}: Advanced geostatistical interpolation utilizing variogram modeling to capture spatial correlation structure in the pressure bias field.
     \item \textbf{Random Forest}~\cite{breiman2001random}: An ensemble of 100 decision trees for pressure bias prediction, representing traditional data-driven calibration using geographic features as input.
     \item \textbf{XGBoost}~\cite{chen2016xgboost}: A highly optimized gradient boosting framework (500 estimators) for pressure bias prediction, using the same feature set as Random Forest.
+    \item \textbf{Plain MLP}: A 4-layer MLP with ReLU activations predicting height residual $\Delta h$ directly, serving as a vanilla deep learning baseline.
+    \item \textbf{SIREN MLP}~\cite{sitzmann2020implicit}: A sinusoidal-activation MLP predicting $\Delta h$, evaluating whether spectral regularization improves spatial generalization.
+    \item \textbf{Hash-SIREN ($\delta P$, no $P_{\text{bias}}$)}: Our hash encoding + SIREN architecture predicting pressure correction $\delta P$ but \emph{without} the physics-derived $P_{\text{bias}}$ feature, isolating the contribution of the bias-decoupling formulation.
+    \item \textbf{TabNet}~\cite{arik2021tabnet}: A state-of-the-art attention-based tabular architecture for pressure bias prediction, evaluating whether modern deep learning architectures can overcome the generalization challenge.
 \end{enumerate}
 
-All baselines operate on the same physics-derived pressure bias field. For IDW and Kriging, the spatial interpolation is applied directly to the bias values at sensor locations. For RF and XGBoost, the models are trained to predict the pressure bias from geographic features (latitude, longitude, altitude) and environmental parameters (temperature, humidity). Under strict LOSO evaluation, the test sensor's data is completely excluded from training.
+All baselines operate on the same physics-derived pressure bias field. For IDW and Kriging, the spatial interpolation is applied directly to the bias values at sensor locations. For RF, XGBoost, and TabNet, the models are trained to predict the pressure bias from geographic features (latitude, longitude, altitude) and environmental parameters (temperature, humidity). Plain MLP and SIREN MLP predict the height residual $\Delta h$ directly. Hash-SIREN predicts $\delta P$ without the $P_{\text{bias}}$ feature. Under strict LOSO evaluation, the test sensor's data is completely excluded from training.
 
 The primary evaluation metrics are the MAE and Root Mean Squared Error (RMSE) against the GNSS-derived ground truth, which are defined as:
 \begin{itemize}
@@ -76,18 +80,18 @@ Table~\ref{tab:baseline_comparison} presents a comprehensive comparison between 
 \textbf{Method} & \textbf{Mean MAE (m)} & \textbf{Std (m)} & \textbf{Improv. (vs. Phys.)} \\
 \midrule
 \multicolumn{4}{c}{\textit{Geostatistical Methods}} \\
-IDW~\cite{shepard1968two} & 37.50 & 3.93 & $-$1.5\% \\
-Ordinary Kriging~\cite{cressie1993statistics} & 37.35 & 4.35 & $-$1.1\% \\
+IDW~\cite{shepard1968two} & 36.66 & 3.85 & 0.8\% \\
+Ordinary Kriging~\cite{cressie1993statistics} & 37.62 & 5.12 & $-$1.8\% \\
 \midrule
 \multicolumn{4}{c}{\textit{Traditional Machine Learning}} \\
-Random Forest~\cite{breiman2001random} & 64.82 & 8.68 & $-$75.4\% \\
-XGBoost~\cite{chen2016xgboost} & 65.09 & 7.96 & $-$76.1\% \\
+Random Forest~\cite{breiman2001random} & 28.75 & 7.43 & 22.2\% \\
+XGBoost~\cite{chen2016xgboost} & 30.35 & 4.44 & 17.9\% \\
 \midrule
 \multicolumn{4}{c}{\textit{Deep Learning Methods}} \\
 Plain MLP (ReLU, $\Delta h$) & 47.05 & 47.13 & $-$27.3\% \\
-SIREN MLP ($\Delta h$) & 22.21 & 18.39 & 39.9\% \\
-Hash-SIREN ($\delta P$, no $P_{\text{bias}}$) & 20.83 & 7.89 & 43.6\% \\
-TabNet~\cite{arik2021tabnet} & 59.41 & 9.44 & $-$60.8\% \\
+SIREN MLP ($\Delta h$)~\cite{sitzmann2020implicit} & 22.21 & 18.39 & 39.9\% \\
+Hash-SIREN ($\delta P$, no $P_{\text{bias}}$) & 61.00 & 6.32 & $-$65.0\% \\
+TabNet~\cite{arik2021tabnet} & 29.81 & 6.40 & 19.3\% \\
 \midrule
 Physics Baseline & 36.96 & 4.04 & - \\
 \midrule
@@ -98,11 +102,11 @@ Physics Baseline & 36.96 & 4.04 & - \\
 
 The empirical results unambiguously demonstrate that the proposed bias-aware PINF formulation paired with curriculum learning dramatically outperforms both traditional analytical expectations and modern deep learning architectures. The analysis reveals several critical metrological insights:
 \begin{itemize}
-    \item \textbf{The Inadequacy of Geostatistical Interpolation}: Classical spatial methods like IDW and Kriging achieve MAEs of 37.50 m and 37.35 m, respectively, which matches the uncalibrated Physics Baseline (36.96 m). This proves that spatial interpolation of the pressure bias field from neighboring sensors provides no meaningful metrological correction. In heterogeneous IoT networks, the primary error source is the random, per-sensor hardware offset, which overshadows geographic pressure variations.
+    \item \textbf{The Inadequacy of Geostatistical Interpolation}: Classical spatial methods like IDW and Kriging achieve MAEs of 36.66\,m and 37.62\,m, respectively, matching the uncalibrated Physics Baseline (36.96\,m). This proves that spatial interpolation of the pressure bias field from neighboring sensors provides no meaningful metrological correction. In heterogeneous IoT networks, the primary error source is the random, per-sensor hardware offset, which overshadows geographic pressure variations.
     
-    \item \textbf{Deep Learning Alone Does Not Solve Zero-Shot Transfer}: Even modern deep learning methods fail under strict LOSO evaluation. TabNet~\cite{arik2021tabnet}, a state-of-the-art attention-based tabular architecture, achieves only 59.41\,m MAE---worse than the physics baseline. A standard MLP (47.05\,m) similarly fails to generalize. SIREN~\cite{sitzmann2020implicit} (22.21\,m) and Hash-SIREN without $P_{\text{bias}}$ (20.83\,m) perform better but remain far from our full model. This hierarchy reveals that neither advanced neural architectures nor spatial hash encoding alone can decouple sensor-specific hardware biases; the physics-derived $P_{\text{bias}}$ feature is essential.
+    \item \textbf{Deep Learning Alone Does Not Solve Zero-Shot Transfer}: Even modern deep learning methods fail under strict LOSO evaluation. TabNet~\cite{arik2021tabnet}, a state-of-the-art attention-based tabular architecture, achieves only 29.81\,m MAE. A standard MLP (47.05\,m) similarly fails to generalize. Hash-SIREN without $P_{\text{bias}}$ (61.00\,m) is even worse than the physics baseline, revealing that predicting pressure corrections without the bias-decoupling feature is counterproductive. SIREN~\cite{sitzmann2020implicit} (22.21\,m) performs best among DL baselines but remains 6$\times$ worse than our full model. This hierarchy reveals that neither advanced neural architectures nor spatial hash encoding alone can decouple sensor-specific hardware biases; the physics-derived $P_{\text{bias}}$ feature is essential.
     
-    \item \textbf{Severe Degradation of ML Regressors in Zero-Shot Transfer}: Under the strict LOSO evaluation, conventional supervised regressors exhibit severe spatial overfitting. Random Forest (64.82 m) and XGBoost (65.09 m) perform substantially worse than the raw physics baseline. Because the \emph{pressure\_bias} is dominated by hardware-specific calibration offsets that are not recoverable from geographic features alone, tree-based models erroneously memorize the hardware ``fingerprints'' of the training sensors. When evaluated on a completely unseen, uncalibrated device, they incorrectly apply these memorized offsets, leading to severe measurement degradation. This confirms that zero-shot altitude estimation is fundamentally an extrapolation problem that standard feature regression cannot solve.
+    \item \textbf{Moderate Improvement of ML Regressors with Limited Generalization}: Under LOSO evaluation, Random Forest (28.75\,m) and XGBoost (30.35\,m) achieve moderate improvement over the physics baseline (36.96\,m), but remain far from operational requirements. While these methods learn partial correlations between geographic features and pressure bias, they cannot fully decouple sensor-specific hardware offsets from the spatial environmental model. As shown in Section~\ref{subsec:random_vs_loso}, these methods achieve much lower MAE (${\sim}10$--13\,m) under random splits due to data leakage, exposing their inability to generalize to unseen hardware.
     
     \item \textbf{PINF Achieves True Zero-Shot Generalization}: Our proposed PINF framework radically suppresses both systemic hardware deviations and environmental microclimate distortions, achieving an exceptional \textbf{MAE of 3.55 m}. This represents a \textbf{90.4\% improvement} over the physics baseline and is an order of magnitude more accurate than the best conventional baseline. By correctly reformulating the problem to decouple the spatial environmental field from specific hardware biases, the model achieves verified zero-shot generalization, accurately calibrating height estimates for entirely new hardware deployed in unseen urban topologies.
 \end{itemize}
@@ -241,6 +245,34 @@ Model Size (fp32) & 5.42 MB \\
 \end{table}
 
 Beyond spatial accuracy, centralized U-space services require high-throughput processing. As detailed in Table~\ref{tab:efficiency}, the compact PINF architecture (1.42M parameters, 5.42 MB) achieves a single-model inference latency of just 2.33 ms per query on server-grade hardware. Even when deploying the full 5-member ensemble to provide calibrated uncertainty bounds, the total latency remains under 12 ms. This computational efficiency ensures the framework can provide real-time, harmonized altitude references for high-density, heterogeneous drone traffic.
+
+
+\subsection{Random-Split vs.\ LOSO Evaluation}
+\label{subsec:random_vs_loso}
+
+To rigorously demonstrate the necessity of the LOSO evaluation protocol, we conducted a supplementary experiment: all baseline methods were re-trained and evaluated under a standard random 80/20 train-test split (averaged over 3 random seeds). Under random splits, samples from the same sensor can appear in both training and test sets, creating implicit data leakage through shared hardware offsets. Table~\ref{tab:random_vs_loso} compares the results.
+
+\begin{table}[htbp]
+\caption{Random-Split vs.\ LOSO Evaluation (MAE in meters)}
+\label{tab:random_vs_loso}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Random Split} & \textbf{LOSO} & \textbf{Degradation} \\
+\midrule
+Random Forest & 10.21 & 28.75 & $2.8\times$ \\
+XGBoost & 12.72 & 30.35 & $2.4\times$ \\
+Plain MLP (ReLU) & 33.19 & 47.05 & $1.4\times$ \\
+SIREN MLP ($\Delta h$) \cite{sitzmann2020implicit} & 4.02 & 22.21 & $\mathbf{5.5\times}$ \\
+Hash-SIREN ($\delta P$) & 15.54 & 61.00 & $\mathbf{3.9\times}$ \\
+TabNet \cite{arik2021tabnet} & 15.43 & 29.81 & $1.9\times$ \\
+\midrule
+\textbf{PINF (Ours)} & --- & \textbf{3.55} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two striking observations emerge. First, the SIREN MLP achieves 4.02\,m MAE under random split---superficially comparable to our 3.55\,m LOSO result---but degrades to 22.21\,m (a \textbf{5.5$\times$ increase}) under strict LOSO. Similarly, Hash-SIREN degrades from 15.54\,m to 61.00\,m (3.9$\times$). Second, Random Forest and XGBoost achieve 10.21\,m and 12.72\,m under random split---which would appear competitive---but degrade to 28.75\,m and 30.35\,m under LOSO (2.4--2.8$\times$). This confirms that random-split evaluation conceals severe generalization failures by allowing models to exploit sensor-specific artifacts present in the training data. In contrast, our PINF framework achieves 3.55\,m under the \emph{harder} LOSO protocol, demonstrating genuine zero-shot generalization rather than data leakage exploitation.
 
 
 \subsection{Comparison with State-of-the-Art}

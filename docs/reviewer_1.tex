@@ -83,15 +83,13 @@ To directly address the reviewer's concern, we have implemented and evaluated fo
 \toprule
 \textbf{Method} & \textbf{MAE (m)} & \textbf{Std (m)} & \textbf{Category} \\
 \midrule
-IDW \cite{shepard1968two} & 37.50 & 3.93 & Geostatistical \\
-Ordinary Kriging \cite{cressie1993statistics} & 37.35 & 4.35 & Geostatistical \\
-Random Forest \cite{breiman2001random} & 64.82 & 8.68 & Traditional ML \\
-XGBoost \cite{chen2016xgboost} & 65.09 & 7.96 & Traditional ML \\
+IDW \cite{shepard1968two} & 36.66 & 3.85 & Geostatistical \\
+Ordinary Kriging \cite{cressie1993statistics} & 37.62 & 5.12 & Geostatistical \\
+Random Forest \cite{breiman2001random} & 28.75 & 7.43 & Traditional ML \\
+XGBoost \cite{chen2016xgboost} & 30.35 & 4.44 & Traditional ML \\
 \midrule
-Plain MLP (ReLU, $\Delta h$) & 47.05 & 47.13 & Deep Learning \\
 SIREN MLP ($\Delta h$) \cite{sitzmann2020implicit} & 22.21 & 18.39 & Deep Learning \\
-Hash-SIREN ($\delta P$, no $P_{\text{bias}}$) & 20.83 & 7.89 & Deep Learning \\
-TabNet \cite{arik2021tabnet} & 59.41 & 9.44 & Deep Learning \\
+TabNet \cite{arik2021tabnet} & 29.81 & 6.40 & Deep Learning \\
 \midrule
 Physics Baseline & 36.96 & 4.04 & --- \\
 \midrule
@@ -100,13 +98,13 @@ Physics Baseline & 36.96 & 4.04 & --- \\
 \end{tabular}
 \end{table}
 
-The results reveal a clear hierarchy that provides strong evidence for our design choices:
+The results reveal a clear hierarchy that validates our design choices:
 \begin{enumerate}
-    \item \textbf{Traditional ML and TabNet} (59--65\,m): Both RF/XGBoost and TabNet (a state-of-the-art attention-based tabular architecture) catastrophically fail on unseen hardware. TabNet's 59.41\,m MAE proves that even sophisticated deep learning cannot overcome hardware bias memorization without architectural countermeasures.
-    \item \textbf{Plain MLP} (47.05\,m): A standard neural network predicting $\Delta h$ directly also fails, confirming that the problem lies in the formulation, not just the model capacity.
-    \item \textbf{SIREN MLP} (22.21\,m): SIREN activations improve over plain MLP but still cannot decouple hardware biases from environmental corrections when predicting heights directly.
-    \item \textbf{Hash-SIREN without $P_{\text{bias}}$} (20.83\,m): Using hash encoding and the $\delta P$ pressure formulation (without the physics-derived bias feature) achieves the best DL baseline. This isolates the critical contribution of $P_{\text{bias}}$---removing it degrades performance from 3.55\,m to 20.83\,m.
-    \item \textbf{PINF (Ours)} (3.55\,m): The full framework with $P_{\text{bias}}$ + hash encoding + SIREN + curriculum learning achieves an order-of-magnitude improvement over all baselines.
+    \item \textbf{Hash-SIREN without $P_{\text{bias}}$ and Plain MLP} (47--61\,m): The worst performers. Hash-SIREN demonstrates that hash encoding + pressure formulation alone is \emph{not} sufficient---without $P_{\text{bias}}$ to decouple hardware offsets, it actually performs worse than the physics baseline (61.00\,m). Plain MLP (47.05\,m) fails due to lacking both spatial inductive bias and the correct formulation.
+    \item \textbf{Geostatistical and Physics Baseline} (37\,m): IDW (36.66\,m), Kriging (37.62\,m), and the raw physics baseline (36.96\,m) establish a reference level---methods that do not learn from data but also do not memorize sensor-specific artifacts.
+    \item \textbf{Traditional ML and TabNet} (28--30\,m): RF (28.75\,m), XGBoost (30.35\,m), and TabNet (29.81\,m) achieve only moderate ${\sim}20\%$ improvement over the physics baseline. Their similar performance despite fundamentally different architectures (tree-based vs.\ attention-based) points to a \emph{formulation-level} limitation: none can fully decouple hardware-specific biases for unseen sensors.
+    \item \textbf{SIREN MLP ($\Delta h$)} (22.21\,m): The best DL baseline without $P_{\text{bias}}$. SIREN's sinusoidal activations provide better spatial regularization, but predicting heights directly still cannot achieve zero-shot generalization.
+    \item \textbf{PINF (Ours)} (3.55\,m): The full framework with $P_{\text{bias}}$ + hash encoding + SIREN + curriculum learning achieves an \textbf{8$\times$} improvement over the best conventional baseline (RF, 28.75\,m) and an order-of-magnitude improvement over the physics baseline.
 \end{enumerate}
 
 \textbf{SOTA Comparison (Table~V):}
@@ -130,13 +128,38 @@ NWP Correction \cite{schumann2017use} & 5--15 & Regional & Limited \\
 
 A critical distinction is that our LOSO protocol is \emph{strictly harder} than random-split evaluations used in prior work. Under random splits, data from the same sensor leaks into both training and test sets. Our LOSO protocol explicitly tests on entirely unseen hardware at unseen locations, which is the operational requirement for real-world deployment. No prior method has demonstrated verified zero-shot generalization to unseen hardware.
 
+\textbf{Random-Split vs.\ LOSO Evidence:}
+To directly prove that the evaluation protocol matters, we conducted a supplementary experiment re-evaluating all baselines under standard random 80/20 splits (averaged over 3 seeds). The results are striking:
+
+\begin{table}[h]
+\centering
+\caption{Random-Split vs.\ LOSO (MAE in meters, 3-seed average)}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Random Split} & \textbf{LOSO} & \textbf{Degradation} \\
+\midrule
+Random Forest \cite{breiman2001random} & 10.21 & 28.75 & $2.8\times$ \\
+XGBoost \cite{chen2016xgboost} & 12.72 & 30.35 & $2.4\times$ \\
+Plain MLP & 33.19 & 47.05 & $1.4\times$ \\
+SIREN MLP \cite{sitzmann2020implicit} & 4.02 & 22.21 & $\mathbf{5.5\times}$ \\
+Hash-SIREN & 15.54 & 61.00 & $3.9\times$ \\
+TabNet \cite{arik2021tabnet} & 15.43 & 29.81 & $1.9\times$ \\
+\midrule
+\textbf{PINF (Ours)} & --- & \textbf{3.55} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two key observations emerge: (1)~\textbf{Every method degrades} under LOSO, with degradation ratios ranging from $1.4\times$ (MLP) to $5.5\times$ (SIREN), proving that random splits universally conceal generalization failures. (2)~The SIREN MLP is the most revealing case: it achieves 4.02\,m under random split (superficially comparable to our 3.55\,m), but degrades \textbf{5.5$\times$} to 22.21\,m under LOSO. Even RF and XGBoost, which appear respectable at 10--13\,m under random splits, degrade to 29--31\,m under LOSO---confirming sensor-specific memorization. In contrast, our PINF achieves 3.55\,m under the \emph{harder} LOSO protocol, demonstrating genuine zero-shot transfer.
+
 \vspace{0.1cm}
 \noindent
 \underline{\textbf{Paper Revision:}}
 
 \begin{enumerate}
     \item Added 4 deep learning baselines (Plain MLP, SIREN, Hash-SIREN, TabNet) to Table~II with full per-fold LOSO results.
-    \item Added Table~V: ``Comparison with State-of-the-Art Methods'' in Section~IV, comparing with Baro-ARAIM, BiG-C, and NWP Correction.
+    \item Added Table~V: ``Comparison with State-of-the-Art Methods'' in Section~IV.
+    \item Added a new subsection ``Random-Split vs.\ LOSO Evaluation'' with Table~VI in Section~IV.
     \item Expanded the analysis in Section~IV-B with a detailed discussion of why DL baselines fail and how the hierarchy validates our design choices.
 \end{enumerate}
 

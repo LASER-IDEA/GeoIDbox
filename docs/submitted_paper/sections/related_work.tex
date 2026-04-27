@@ -50,12 +50,13 @@ Baro-ARAIM \cite{simonetti2024geodetic} & NWP-based & 4--30 m & Unknown \\
 BiG-C \cite{narayanan2022enhanced} & NWP-based & ${\sim}10$ m & Unknown \\
 NWP Correction \cite{schumann2017use} & NWP-based & 5--15 m & Limited \\
 \midrule
-Random Forest \cite{breiman2001random, zhang2020urban} & Data-driven & 10--30 m & No \\
-XGBoost \cite{chen2016xgboost} & Data-driven & 10--30 m & No \\
-Deep Learning \cite{chen2022deep} & Data-driven & 5--15 m & No \\
+Random Forest \cite{breiman2001random} & Data-driven & 28.75 m$^{\dagger}$ & No \\
+XGBoost \cite{chen2016xgboost} & Data-driven & 30.35 m$^{\dagger}$ & No \\
+Deep Learning \cite{chen2022deep} & Data-driven & 22--47 m$^{\dagger}$ & No \\
 \midrule
-\textbf{PINF (Ours)} & \textbf{Physics-Neural} & \textbf{3.55 m} & \textbf{Verified (LOSO)} \\
+\textbf{PINF (Ours)} & \textbf{Physics-Neural} & \textbf{3.55 m}$^{\dagger}$ & \textbf{Verified (LOSO)} \\
 \bottomrule
+\multicolumn{4}{l}{\footnotesize $^{\dagger}$Our 8-fold LOSO evaluation. Other accuracies from original publications.}
 \end{tabular}
 \end{table}
 

@@ -25,7 +25,7 @@ Our claim is grounded in the strict \textbf{8-fold Leave-One-Sensor-Out (LOSO)} 
     \item No data from the test sensor is used during training, validation, or hyperparameter tuning.
 \end{itemize}
 
-This protocol is fundamentally different from random data splits used in prior work (e.g., BiG-C~\cite{narayanan2022enhanced}), where samples from the same sensor can appear in both training and test sets, leading to optimistic estimates. Our LOSO protocol reveals that conventional ML methods (RF, XGBoost) actually \emph{degrade} below the physics baseline under this strict evaluation (Table~II), confirming that true zero-shot generalization is a genuinely hard problem that our $P_{\text{bias}}$ formulation specifically addresses.
+This protocol is fundamentally different from random data splits used in prior work (e.g., BiG-C~\cite{narayanan2022enhanced}), where samples from the same sensor can appear in both training and test sets, leading to optimistic estimates. Our LOSO protocol reveals that conventional ML methods (RF, XGBoost) achieve only moderate improvement (28--30\,m vs.\ 36.96\,m baseline) and degrade 2.4--2.8$\times$ from their random-split performance, confirming that true zero-shot generalization is a genuinely hard problem that our $P_{\text{bias}}$ formulation specifically addresses.
 
 The statistical robustness is supported by: (1)~a total dataset of $N = 134{,}627$ synchronized samples, providing substantial temporal coverage; (2)~consistent performance across all 8 folds with a low standard deviation of 1.23\,m; and (3)~all folds achieving sub-5\,m MAE.
 
@@ -61,10 +61,10 @@ We have explicitly acknowledged these limitations in the revised manuscript and 
 \underline{\textbf{Response:}}
 \vspace{0.2cm}
 
-We appreciate this suggestion and have substantially broadened our comparative evaluation. In the revised manuscript, we now provide comparisons at two levels:
+We appreciate this suggestion and have substantially broadened our comparative evaluation. In the revised manuscript, we now provide comparisons at three levels:
 
 \textbf{Level 1 --- Baseline Comparisons (Table~II):}
-We retain our comparison with classical geostatistical (IDW, Ordinary Kriging) and machine learning methods (Random Forest, XGBoost). While the reviewer may consider these ``traditional,'' the results are in fact highly informative: under strict LOSO evaluation, RF (64.82\,m) and XGBoost (65.09\,m) perform \emph{substantially worse} than the raw physics baseline (36.96\,m). This degradation, rather than being a weakness of the comparison, is itself a key finding---it demonstrates that standard data-driven methods memorize sensor-specific hardware fingerprints and catastrophically fail when deployed to unseen devices.
+We retain our comparison with classical geostatistical (IDW, Ordinary Kriging) and machine learning methods (Random Forest, XGBoost), and have added four deep learning baselines (Plain MLP, SIREN, Hash-SIREN, TabNet). Under strict LOSO evaluation, RF (28.75\,m) and XGBoost (30.35\,m) achieve only moderate ${\sim}20\%$ improvement over the physics baseline (36.96\,m). More tellingly, these same methods achieve 10--13\,m MAE under random splits, revealing a \textbf{2.4--2.8$\times$ degradation} when evaluated on truly unseen hardware. This demonstrates that standard data-driven methods partially memorize sensor-specific hardware fingerprints, which inflate random-split results but fail under operationally meaningful evaluation.
 
 \textbf{Level 2 --- State-of-the-Art Comparison (Table~V, newly added):}
 We have added a comprehensive comparison with the most representative altitude estimation methods in the literature:
